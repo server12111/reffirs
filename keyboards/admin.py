@@ -190,7 +190,7 @@ def task_actions_kb(task_id: int, is_active: bool) -> InlineKeyboardMarkup:
 
 BUTTON_KEYS: dict[str, str] = {
     "menu:main":           "🏠 Главное меню",
-    "menu:earn":           "⭐ Заработать звёзды",
+    "menu:earn":           "⭐ Получить звёзды",
     "menu:referrals":      "👥 Мои рефералы",
     "menu:bonus":          "🎁 Бонус",
     "menu:profile":        "👤 Профиль",
