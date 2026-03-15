@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⭐ Заработать звёзды", callback_data="menu:earn"))
+    builder.row(InlineKeyboardButton(text="⭐ Получить звёзды", callback_data="menu:earn"))
     builder.row(InlineKeyboardButton(text="👥 Мои рефералы", callback_data="menu:referrals"))
     builder.row(
         InlineKeyboardButton(text="🎁 Бонус", callback_data="menu:bonus"),
