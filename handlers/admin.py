@@ -2403,6 +2403,8 @@ async def cb_integration_key_set(callback: CallbackQuery, state: FSMContext) -> 
     key = callback.data.split(":")[2]
     label = _INTEGRATION_LABELS.get(key, key)
     key_names = {
+        "botohub": "BOTOHUB_KEY",
+        "flyer": "FLYER_KEY",
         "piarflow": "PIARFLOW_KEY",
         "subgram": "SUBGRAM_KEY",
         "linkni": "LINKNI_CODE",
@@ -2437,6 +2439,8 @@ async def msg_integration_key(message: Message, state: FSMContext, session: Asyn
     # Also apply to current runtime config
     from config import config as _cfg
     key_map = {
+        "botohub": "BOTOHUB_KEY",
+        "flyer": "FLYER_KEY",
         "piarflow": "PIARFLOW_KEY",
         "subgram": "SUBGRAM_KEY",
         "linkni": "LINKNI_CODE",

@@ -298,6 +298,8 @@ def integration_counts_kb() -> InlineKeyboardMarkup:
 
 def integration_keys_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔑 BotoHub key", callback_data="integration:key:botohub"))
+    builder.row(InlineKeyboardButton(text="🔑 Flyer key", callback_data="integration:key:flyer"))
     builder.row(InlineKeyboardButton(text="🔑 PiarFlow key", callback_data="integration:key:piarflow"))
     builder.row(InlineKeyboardButton(text="🔑 Subgram key", callback_data="integration:key:subgram"))
     builder.row(InlineKeyboardButton(text="🔑 Linkni code", callback_data="integration:key:linkni"))
