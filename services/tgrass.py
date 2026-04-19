@@ -15,9 +15,9 @@ def get_tgrass_wall_url() -> str | None:
     Format: https://t.me/linknibot/app?startapp=x_{code}
     Returns None if TGRASS_CODE is not configured.
     """
-    if not config.TGRASS_CODE:
+    if not config.LINKNI_CODE:
         return None
-    return f"https://t.me/linknibot/app?startapp=x_{config.TGRASS_CODE}"
+    return f"https://t.me/linknibot/app?startapp=x_{config.LINKNI_CODE}"
 
 
 async def check_tgrass_subscription(user_id: int) -> bool:
@@ -28,14 +28,14 @@ async def check_tgrass_subscription(user_id: int) -> bool:
     Returns False if not subscribed yet.
     On any API error — returns True (allow access, don't block on network failure).
     """
-    if not config.TGRASS_CODE:
+    if not config.LINKNI_CODE:
         return True
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 TGRASS_API_URL,
-                params={"code": config.TGRASS_CODE, "user_id": user_id},
+                params={"code": config.LINKNI_CODE, "user_id": user_id},
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status != 200:

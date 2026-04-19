@@ -12,7 +12,7 @@ from keyboards.botohub import build_combined_wall_kb
 from keyboards.main import main_menu_kb
 from config import config
 from services.referral import grant_referral_reward_if_pending
-from services.flyer import get_flyer_tasks, check_subscription
+from services.flyer import get_flyer_tasks
 from services.piarflow import get_piarflow_tasks
 from services.subgram import get_subgram_sponsors
 from utils.botohub_api import check_botohub
@@ -109,24 +109,32 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         async def _skip_bool(): return True
 
         # External API calls — safe to run in parallel
-        bh_result, flyer_tasks, pf_result, sg_sponsors, flyer_done = (
+        bh_result, flyer_tasks, pf_result, sg_sponsors = (
             await asyncio.gather(
                 check_botohub(user_id) if bh_on else _skip_bh(),
                 get_flyer_tasks(user_id, language_code) if fl_on else _skip_list(),
                 get_piarflow_tasks(user_id, pf_count) if pf_on else _skip_bh(),
                 get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
-                check_subscription(user_id, language_code) if fl_on else _skip_bool(),
             )
         )
 
-        bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"]
-        flyer_pending = fl_on and not flyer_done and bool(flyer_tasks)
-        pf_pending = pf_on and not pf_result["completed"] and not pf_result["skip"]
+        flyer_pending = fl_on and bool(flyer_tasks)
 
-        has_anything = bh_pending or flyer_pending or pf_pending or bool(sg_sponsors)
+        # Wall 1: PiarFlow
+        pf_pending = pf_on and not pf_result["completed"] and not pf_result["skip"] and bool(pf_result["tasks"])
+        if pf_pending:
+            kb = build_combined_wall_kb([], [], [], piarflow_tasks=pf_result["tasks"])
+            await message.answer(
+                "📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>",
+                reply_markup=kb,
+            )
+            return
 
-        if has_anything:
-            # Cache BotoHub sponsor count for referral reward calculation
+        # Wall 2: BotoHub + Flyer + Subgram
+        bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
+        has_wall3 = bh_pending or flyer_pending or bool(sg_sponsors)
+
+        if has_wall3:
             if bh_pending:
                 count_str = str(len(bh_result["tasks"]))
                 cached = await session.get(BotSettings, "botohub_sponsors_count")
@@ -140,11 +148,10 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
                 bh_result["tasks"] if bh_pending else [],
                 flyer_tasks if flyer_pending else [],
                 [],
-                piarflow_tasks=pf_result["tasks"] if pf_pending else [],
                 subgram_sponsors=sg_sponsors,
             )
             await message.answer(
-                "📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>",
+                "📢 <b>Подпишитесь на каналы ниже і нажмите «Я подписался».</b>",
                 reply_markup=kb,
             )
             return

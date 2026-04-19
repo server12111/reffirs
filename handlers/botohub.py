@@ -97,60 +97,69 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
     async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
     async def _skip_bool(): return True
 
-    # Check only enabled integrations in parallel
-    bh_result, flyer_done, pf_result = await asyncio.gather(
+    async def _skip_list(): return []
+
+    # Stage 1: Check PiarFlow
+    if pf_on:
+        pf_result = await get_piarflow_tasks(user_id, pf_count)
+        pf_pending = not pf_result["completed"] and not pf_result["skip"] and bool(pf_result["tasks"])
+
+        if pf_pending:
+            await callback.answer(
+                "❌ Вы не подписались на все каналы.\nПодпишитесь и нажмите кнопку снова.",
+                show_alert=True,
+            )
+            pf_kb = build_combined_wall_kb([], [], [], piarflow_tasks=pf_result["tasks"])
+            try:
+                await callback.message.edit_reply_markup(reply_markup=pf_kb)
+            except Exception:
+                pass
+            logger.info("CombinedWall: user %s stage 1 (PiarFlow) not done", user_id)
+            return
+
+    # Stage 2: BotoHub + Flyer + Subgram
+    bh_result, flyer_tasks, sg_sponsors = await asyncio.gather(
         check_botohub(user_id) if bh_on else _skip_bh(),
-        check_subscription(user_id, language_code) if fl_on else _skip_bool(),
-        get_piarflow_tasks(user_id, pf_count) if pf_on else _skip_bh(),
+        get_flyer_tasks(user_id, language_code) if fl_on else _skip_list(),
+        get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
     )
 
-    bh_done = bh_result["completed"] or bh_result["skip"]
-    pf_done = pf_result["completed"] or pf_result["skip"]
+    bh_done = bh_result["completed"] or bh_result["skip"] or not bh_result["tasks"]
+    flyer_done = not bool(flyer_tasks)
+    sg_done = not bool(sg_sponsors)
 
-    if bh_done and flyer_done and pf_done:
-        # All passed — referral reward + GramAds + main menu
-        db_user = await session.get(User, user_id)
-        if db_user and db_user.referral_reward_pending:
-            await grant_referral_reward_if_pending(db_user, session, callback.bot)
-
-        # Show GramAds ad (non-blocking, silent on error)
-        asyncio.create_task(show_gramads(user_id))
-
-        default_text = (
-            "👋 <b>Главное меню</b>\n\n"
-            "🌟 Зарабатывай Telegram Stars прямо здесь:\n\n"
-            "• ⭐ <b>Рефералы</b> — приглашай друзей и получай звёзды за каждого\n"
-            "• 📋 <b>Задания</b> — подписывайся на каналы и выполняй задачи\n"
-            "• 🎮 <b>Игры</b> — испытай удачу в мини-играх\n"
-            "• 🎁 <b>Бонус</b> — бесплатные звёзды каждые 24 часа\n"
-            "• 💰 <b>Вывод</b> — выводи накопленное на свой Telegram\n\n"
-            "Выбери раздел ниже 👇"
-        )
-        await answer_with_content(callback, session, "menu:main", default_text, main_menu_kb())
-        await callback.answer("✅ Подписка подтверждена!")
-        logger.info("CombinedWall: user %s passed all subscription walls", user_id)
-
-    else:
-        await callback.answer(
-            "❌ Вы не подписались на все каналы.\nПодпишитесь и нажмите кнопку снова.",
-            show_alert=True,
-        )
-        # Rebuild keyboard with only remaining channels
-        flyer_tasks = await get_flyer_tasks(user_id, language_code) if fl_on and not flyer_done else []
-        sg_sponsors = await get_subgram_sponsors(user_id, sg_count) if sg_on else []
-
-        new_kb = build_combined_wall_kb(
-            bh_result["tasks"] if bh_on and not bh_done else [],
-            flyer_tasks,
+    if not (bh_done and flyer_done and sg_done):
+        await callback.answer("✅ Первый этап пройден!")
+        bh_kb = build_combined_wall_kb(
+            bh_result["tasks"] if not bh_done else [],
+            flyer_tasks if not flyer_done else [],
             [],
-            piarflow_tasks=pf_result["tasks"] if pf_on and not pf_done else [],
-            subgram_sponsors=sg_sponsors,
+            subgram_sponsors=sg_sponsors if not sg_done else [],
         )
-        try:
-            await callback.message.edit_reply_markup(reply_markup=new_kb)
-        except Exception:
-            pass
-        logger.info(
-            "CombinedWall: user %s not fully subscribed (bh=%s, flyer=%s, pf=%s)",
-            user_id, bh_done, flyer_done, pf_done,
+        await callback.message.answer(
+            "📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>",
+            reply_markup=bh_kb,
         )
+        logger.info("CombinedWall: user %s sent to BotoHub wall (stage 3)", user_id)
+        return
+
+    # All stages passed — referral reward + GramAds + main menu
+    db_user = await session.get(User, user_id)
+    if db_user and db_user.referral_reward_pending:
+        await grant_referral_reward_if_pending(db_user, session, callback.bot)
+
+    asyncio.create_task(show_gramads(user_id))
+
+    default_text = (
+        "👋 <b>Главное меню</b>\n\n"
+        "🌟 Зарабатывай Telegram Stars прямо здесь:\n\n"
+        "• ⭐ <b>Рефералы</b> — приглашай друзей и получай звёзды за каждого\n"
+        "• 📋 <b>Задания</b> — подписывайся на каналы и выполняй задачи\n"
+        "• 🎮 <b>Игры</b> — испытай удачу в мини-играх\n"
+        "• 🎁 <b>Бонус</b> — бесплатные звёзды каждые 24 часа\n"
+        "• 💰 <b>Вывод</b> — выводи накопленное на свой Telegram\n\n"
+        "Выбери раздел ниже 👇"
+    )
+    await answer_with_content(callback, session, "menu:main", default_text, main_menu_kb())
+    await callback.answer("✅ Подписка подтверждена!")
+    logger.info("CombinedWall: user %s passed all walls", user_id)

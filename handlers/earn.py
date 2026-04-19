@@ -7,6 +7,7 @@ from database.models import User
 from handlers.button_helper import answer_with_content
 from keyboards.main import back_to_menu_kb
 from config import config
+from database.engine import get_button_content
 
 router = Router()
 
@@ -35,7 +36,11 @@ async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User)
             f"Чем больше спонсоров назначит бот — тем выше твоя награда! 🚀"
         )
 
-    default_text = (
+    ref_suffix = (
+        f"👥 Ты пригласил: <b>{db_user.referrals_count}</b> чел.\n\n"
+        f"🔗 <b>Твоя реферальная ссылка:</b>\n<code>{ref_link}</code>"
+    )
+    default_body = (
         "⭐ <b>Заработать звёзды</b>\n\n"
         "Приглашай друзей — получай <b>Telegram Stars</b> за каждого!\n\n"
         f"{reward_line}\n\n"
@@ -43,10 +48,28 @@ async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User)
         "• Друг должен запустить бота по твоей ссылке\n"
         "• Один пользователь засчитывается только один раз\n"
         "• Выплата — мгновенно после регистрации\n\n"
-        f"👥 Ты пригласил: <b>{db_user.referrals_count}</b> чел.\n\n"
-        f"🔗 <b>Твоя реферальная ссылка:</b>\n<code>{ref_link}</code>"
     )
-    await answer_with_content(callback, session, "menu:earn", default_text, back_to_menu_kb())
+
+    content = await get_button_content(session, "menu:earn")
+    has_photo = bool(content and content.photo_file_id)
+    text = ((content.text if content and content.text else None) or default_body) + ref_suffix
+
+    kb = back_to_menu_kb()
+    if has_photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer_photo(photo=content.photo_file_id, caption=text, parse_mode="HTML", reply_markup=kb)
+    else:
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 
 

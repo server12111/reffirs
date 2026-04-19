@@ -19,10 +19,14 @@ class PromoStates(StatesGroup):
 @router.callback_query(lambda c: c.data == "promo:enter")
 async def cb_promo_enter(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PromoStates.waiting_code)
-    await callback.message.edit_text(
-        "🎟 Введи промокод:",
-        reply_markup=back_to_menu_kb(),
-    )
+    try:
+        await callback.message.edit_text("🎟 Введи промокод:", reply_markup=back_to_menu_kb())
+    except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer("🎟 Введи промокод:", reply_markup=back_to_menu_kb())
     await callback.answer()
 
 
