@@ -75,11 +75,17 @@ async def send_with_content(
     text = (content.text if content and content.text else None) or default_text
 
     if has_photo:
-        await message.answer_photo(
-            photo=content.photo_file_id,
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=keyboard,
-        )
-    else:
+        try:
+            await message.answer_photo(
+                photo=content.photo_file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            return
+        except Exception:
+            pass
+    try:
         await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        await message.answer(text, parse_mode="HTML")
