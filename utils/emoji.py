@@ -54,9 +54,9 @@ _PATTERN = _re.compile('(' + '|'.join(_re.escape(e) for e in _SORTED) + ')')
 
 def pe(text: str) -> str:
     """Replace known emoji with premium tg-emoji HTML tags (single pass)."""
-    return _PATTERN.sub(lambda m: f'<tg-emoji emoji_id="{_MAP[m.group(0)]}">{m.group(0)}</tg-emoji>', text)
+    return _PATTERN.sub(lambda m: f'<tg-emoji emoji-id="{_MAP[m.group(0)]}">{m.group(0)}</tg-emoji>', text)
 
 
 def strip_pe(text: str) -> str:
     """Remove <tg-emoji> tags, keeping the fallback plain emoji."""
-    return _re.sub(r'<tg-emoji[^>]*>([^<]*)</tg-emoji>', r'\1', text)
+    return _re.sub(r'<tg-emoji[^>]*>([^<]*)</tg-emoji>', r'\1', text, flags=_re.IGNORECASE)
