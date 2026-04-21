@@ -6,17 +6,15 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from config import config
-from database.models import User, Task, TaskCompletion, FlyerServiceCompletion
+from database.models import User, Task, TaskCompletion
 from utils.emoji import pe
 from handlers.button_helper import safe_edit
-from keyboards.main import task_single_kb, task_done_kb, tasks_all_done_kb
+from keyboards.main import task_single_kb, task_done_kb, back_to_menu_kb
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 TASK_REWARD = 0.25
-FS_REWARD = 0.25
 
 
 async def _show_next_task(
@@ -38,23 +36,6 @@ async def _show_next_task(
         select(Task).where(Task.is_active == True).order_by(Task.created_at)
     )).scalars().all()
     pending_bot = [t for t in all_tasks if t.id not in done_bot_ids and t.id not in skipped_bot]
-
-    fs_available = bool(config.FLYERSERVICE_KEY)
-
-    # FlyerService first, then bot tasks
-    if fs_available:
-        if state:
-            await state.update_data(current_task_type="flyerservice", current_task_id="flyerservice")
-        url = config.FLYERSERVICE_URL or None
-        kb = task_single_kb("flyerservice", "0", url)
-        text = pe(
-            f"📋 <b>Задание</b>\n\n"
-            f"🔗 Выполни задания и нажми «Проверить».\n\n"
-            f"💰 Награда: <b>{FS_REWARD} ⭐ за каждое выполненное задание</b>"
-        )
-        await safe_edit(callback, text, kb)
-        await callback.answer()
-        return
 
     if pending_bot:
         task = pending_bot[0]
@@ -81,7 +62,7 @@ async def _show_next_task(
     await safe_edit(
         callback,
         pe("📋 <b>Задания</b>\n\nВсе задания выполнены! Заходи позже."),
-        tasks_all_done_kb(show_flyerservice=fs_available),
+        back_to_menu_kb(),
     )
     await callback.answer()
 
@@ -104,61 +85,6 @@ async def cb_task_skip(callback: CallbackQuery, session: AsyncSession, db_user: 
 
     await callback.answer("⏭ Пропущено")
     await _show_next_task(callback, session, db_user, state)
-
-
-@router.callback_query(lambda c: c.data in ("task:flyerservice:check", "flyerservice:claim"))
-async def cb_verify_flyerservice(
-    callback: CallbackQuery, session: AsyncSession, db_user: User
-) -> None:
-    """Immediately check get_completed_tasks and credit all new completions."""
-    from services.flyerservice import get_completed_tasks
-
-    if not config.FLYERSERVICE_KEY:
-        await callback.answer("FlyerService не настроен.", show_alert=True)
-        return
-
-    completions = await get_completed_tasks(db_user.user_id)
-    if not completions:
-        await callback.answer(
-            "❌ Нет выполненных заданий FlyerService.\nВыполни задания и нажми «Проверить».",
-            show_alert=True,
-        )
-        return
-
-    credited = 0
-    for item in completions:
-        sig = str(item.get("signature") or item.get("id") or "")
-        if not sig:
-            continue
-        already = (await session.execute(
-            select(FlyerServiceCompletion).where(
-                FlyerServiceCompletion.user_id == db_user.user_id,
-                FlyerServiceCompletion.signature == sig,
-            )
-        )).scalar_one_or_none()
-        if not already:
-            session.add(FlyerServiceCompletion(user_id=db_user.user_id, signature=sig))
-            db_user.stars_balance += FS_REWARD
-            credited += 1
-
-    if credited:
-        await session.commit()
-        await safe_edit(
-            callback,
-            pe(
-                f"✅ <b>+{credited * FS_REWARD:.2f} ⭐ получено!</b>\n\n"
-                f"Засчитано заданий: <b>{credited}</b>\n"
-                f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>"
-            ),
-            task_done_kb(),
-        )
-        await callback.answer(f"+{credited * FS_REWARD:.2f} ⭐")
-        logger.info("FlyerService: credited %d tasks to user %s", credited, db_user.user_id)
-    else:
-        await callback.answer(
-            "✅ Все задания уже засчитаны.\nВыполни новые задания в FlyerService.",
-            show_alert=True,
-        )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("task:bot:"))
