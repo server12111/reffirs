@@ -6,15 +6,17 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from database.models import User, Task, TaskCompletion, LinkniCompletion, FlyerServiceCompletion
+from config import config
+from database.models import User, Task, TaskCompletion, FlyerServiceCompletion
 from utils.emoji import pe
 from handlers.button_helper import safe_edit
-from keyboards.main import task_single_kb, task_done_kb, back_to_menu_kb
+from keyboards.main import task_single_kb, task_done_kb, tasks_all_done_kb
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 TASK_REWARD = 0.25
+FS_REWARD = 0.25
 
 
 async def _show_next_task(
@@ -23,86 +25,39 @@ async def _show_next_task(
     db_user: User,
     state: FSMContext | None = None,
 ) -> None:
-    """Find next uncompleted task and display it (one-at-a-time, interleaved Linkni:Bot:FlyerService)."""
-    from services.linkni import get_linkni_task_url, linkni_has_sponsors
-
     user_id = db_user.user_id
 
-    # Completed bot task IDs
     done_bot_ids = set((await session.execute(
         select(TaskCompletion.task_id).where(TaskCompletion.user_id == user_id)
     )).scalars().all())
 
-    # Completed Linkni entry keys
-    done_linkni_keys = set((await session.execute(
-        select(LinkniCompletion.entry_key).where(LinkniCompletion.user_id == user_id)
-    )).scalars().all())
-
-    # Skipped this session (stored in FSM)
     fsm_data = ((await state.get_data()) or {}) if state else {}
     skipped_bot = set(fsm_data.get("skipped_bot", []))
-    linkni_skipped = fsm_data.get("linkni_skipped", False)
 
-    # Active bot tasks not yet completed or skipped
     all_tasks = (await session.execute(
         select(Task).where(Task.is_active == True).order_by(Task.created_at)
     )).scalars().all()
     pending_bot = [t for t in all_tasks if t.id not in done_bot_ids and t.id not in skipped_bot]
 
-    # Linkni: one synthetic task if available and not skipped this session
-    linkni_url = get_linkni_task_url(user_id)
-    linkni_available = bool(linkni_url) and not linkni_skipped and await linkni_has_sponsors(user_id)
-    pending_linkni = [{"url": linkni_url, "title": "Подписка на канал"}] if linkni_available else []
+    fs_available = bool(config.FLYERSERVICE_KEY)
 
-    # Interleave round-robin across two pools
-    total_done = len(done_bot_ids) + len(done_linkni_keys)
-    pools_order = [
-        ("linkni", pending_linkni),
-        ("bot", pending_bot),
-    ]
-    idx = total_done % len(pools_order)
-    ordered = pools_order[idx:] + pools_order[:idx]
-
-    next_type, next_task = None, None
-    for t_type, pool in ordered:
-        if pool:
-            next_type, next_task = t_type, pool[0]
-            break
-
-    if next_type is None:
-        await safe_edit(
-            callback,
-            pe("📋 <b>Задания</b>\n\nВсе задания выполнены! Заходи позже."),
-            back_to_menu_kb(),
+    # FlyerService first, then bot tasks
+    if fs_available:
+        if state:
+            await state.update_data(current_task_type="flyerservice", current_task_id="flyerservice")
+        url = config.FLYERSERVICE_URL or None
+        kb = task_single_kb("flyerservice", "0", url)
+        text = pe(
+            f"📋 <b>Задание FlyerService</b>\n\n"
+            f"🔗 Выполни задания в FlyerService и нажми «Проверить».\n\n"
+            f"💰 Награда: <b>{FS_REWARD} ⭐ за каждое выполненное задание</b>"
         )
+        await safe_edit(callback, text, kb)
         await callback.answer()
         return
 
-    if next_type == "flyerservice":
-        sig = next_task.get("signature", "")
-        links = next_task.get("links") or []
-        url = links[0] if links else None
-        if state:
-            await state.update_data(fs_signature=sig, current_task_type="flyerservice", current_task_id=sig)
-        kb = task_single_kb("flyerservice", sig, url)
-        text = pe(
-            f"📋 <b>Задание</b>\n\n"
-            f"🔗 <b>{next_task.get('name', 'Подписка на канал')}</b>\n\n"
-            f"Выполни задание и нажми «Проверить».\n\n"
-            f"💰 Награда: <b>{TASK_REWARD} ⭐</b>"
-        )
-    elif next_type == "linkni":
-        if state:
-            await state.update_data(current_task_type="linkni", current_task_id="linkni")
-        kb = task_single_kb("linkni", "0", next_task["url"])
-        text = pe(
-            f"📋 <b>Задание</b>\n\n"
-            f"🔗 <b>{next_task['title']}</b>\n\n"
-            f"Подпишись на канал и нажми «Проверить».\n\n"
-            f"💰 Награда: <b>{TASK_REWARD} ⭐</b>"
-        )
-    else:
-        task = next_task
+    if pending_bot:
+        task = pending_bot[0]
         if state:
             await state.update_data(current_task_type="bot", current_task_id=str(task.id))
         url = None
@@ -119,8 +74,15 @@ async def _show_next_task(
             f"{task.description}{extra}\n\n"
             f"💰 Награда: <b>{TASK_REWARD} ⭐</b>"
         )
+        await safe_edit(callback, text, kb)
+        await callback.answer()
+        return
 
-    await safe_edit(callback, text, kb)
+    await safe_edit(
+        callback,
+        pe("📋 <b>Задания</b>\n\nВсе задания выполнены! Заходи позже."),
+        tasks_all_done_kb(show_flyerservice=fs_available),
+    )
     await callback.answer()
 
 
@@ -131,7 +93,6 @@ async def cb_tasks_menu(callback: CallbackQuery, session: AsyncSession, db_user:
 
 @router.callback_query(lambda c: c.data == "task:skip")
 async def cb_task_skip(callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext) -> None:
-    """Skip current task for this session and show next one."""
     fsm_data = await state.get_data()
     task_type = fsm_data.get("current_task_type")
     task_id = fsm_data.get("current_task_id")
@@ -140,48 +101,68 @@ async def cb_task_skip(callback: CallbackQuery, session: AsyncSession, db_user: 
         skipped = set(fsm_data.get("skipped_bot", []))
         skipped.add(int(task_id))
         await state.update_data(skipped_bot=list(skipped))
-    elif task_type == "linkni":
-        await state.update_data(linkni_skipped=True)
 
     await callback.answer("⏭ Пропущено")
     await _show_next_task(callback, session, db_user, state)
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("task:linkni:"))
-async def cb_verify_linkni(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
-    """Verify Linkni task by checking new subscription in API response."""
-    from services.linkni import linkni_find_new_subscription
+@router.callback_query(lambda c: c.data in ("task:flyerservice:check", "flyerservice:claim"))
+async def cb_verify_flyerservice(
+    callback: CallbackQuery, session: AsyncSession, db_user: User
+) -> None:
+    """Immediately check get_completed_tasks and credit all new completions."""
+    from services.flyerservice import get_completed_tasks
 
-    done_linkni_keys = set((await session.execute(
-        select(LinkniCompletion.entry_key).where(LinkniCompletion.user_id == db_user.user_id)
-    )).scalars().all())
+    if not config.FLYERSERVICE_KEY:
+        await callback.answer("FlyerService не настроен.", show_alert=True)
+        return
 
-    found, key = await linkni_find_new_subscription(db_user.user_id, done_linkni_keys)
-    if not found:
+    completions = await get_completed_tasks(db_user.user_id)
+    if not completions:
         await callback.answer(
-            "❌ Ты ещё не подписался.\nПерейди по ссылке и нажми «Проверить».",
+            "❌ Нет выполненных заданий FlyerService.\nВыполни задания и нажми «Проверить».",
             show_alert=True,
         )
         return
 
-    # Give reward
-    session.add(LinkniCompletion(user_id=db_user.user_id, entry_key=key))
-    db_user.stars_balance += TASK_REWARD
-    await session.commit()
+    credited = 0
+    for item in completions:
+        sig = str(item.get("signature") or item.get("id") or "")
+        if not sig:
+            continue
+        already = (await session.execute(
+            select(FlyerServiceCompletion).where(
+                FlyerServiceCompletion.user_id == db_user.user_id,
+                FlyerServiceCompletion.signature == sig,
+            )
+        )).scalar_one_or_none()
+        if not already:
+            session.add(FlyerServiceCompletion(user_id=db_user.user_id, signature=sig))
+            db_user.stars_balance += FS_REWARD
+            credited += 1
 
-    await safe_edit(
-        callback,
-        f"✅ <b>+{TASK_REWARD} ⭐ получено!</b>\n\n"
-        f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>",
-        task_done_kb(),
-    )
-    await callback.answer(f"+{TASK_REWARD} ⭐")
-    logger.info("Linkni task completed by user %s (key=%s)", db_user.user_id, key)
+    if credited:
+        await session.commit()
+        await safe_edit(
+            callback,
+            pe(
+                f"✅ <b>+{credited * FS_REWARD:.2f} ⭐ получено!</b>\n\n"
+                f"Засчитано заданий: <b>{credited}</b>\n"
+                f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>"
+            ),
+            task_done_kb(),
+        )
+        await callback.answer(f"+{credited * FS_REWARD:.2f} ⭐")
+        logger.info("FlyerService: credited %d tasks to user %s", credited, db_user.user_id)
+    else:
+        await callback.answer(
+            "✅ Все задания уже засчитаны.\nВыполни новые задания в FlyerService.",
+            show_alert=True,
+        )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("task:bot:"))
 async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user: User, bot: Bot) -> None:
-    """Verify a bot admin task."""
     try:
         task_id = int(callback.data.split(":")[2])
     except (IndexError, ValueError):
@@ -193,7 +174,6 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
         await callback.answer("Задание не найдено или деактивировано.", show_alert=True)
         return
 
-    # Already done?
     already = (await session.execute(
         select(TaskCompletion).where(
             TaskCompletion.user_id == db_user.user_id,
@@ -204,7 +184,6 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
         await callback.answer("Ты уже выполнил это задание!", show_alert=True)
         return
 
-    # Verify based on type
     if task.task_type == "subscribe":
         if not task.channel_id:
             await callback.answer("Ошибка конфигурации задания.", show_alert=True)
@@ -253,64 +232,18 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
             )
             return
 
-    # All checks passed — give reward
     session.add(TaskCompletion(user_id=db_user.user_id, task_id=task_id))
     db_user.stars_balance += TASK_REWARD
     await session.commit()
 
     await safe_edit(
         callback,
-        f"✅ <b>+{TASK_REWARD} ⭐ получено!</b>\n\n"
-        f"<b>{task.title}</b>\n"
-        f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>",
+        pe(
+            f"✅ <b>+{TASK_REWARD} ⭐ получено!</b>\n\n"
+            f"<b>{task.title}</b>\n"
+            f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>"
+        ),
         task_done_kb(),
     )
     await callback.answer(f"+{TASK_REWARD} ⭐")
     logger.info("Bot task %s completed by user %s", task_id, db_user.user_id)
-
-
-@router.callback_query(lambda c: c.data == "task:flyerservice:check")
-async def cb_verify_flyerservice(
-    callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext
-) -> None:
-    """Verify FlyerService task: check if signature is no longer in pending list."""
-    from services.flyerservice import is_task_done
-
-    data = await state.get_data()
-    signature = data.get("fs_signature")
-    if not signature:
-        await callback.answer("❌ Задание не найдено. Попробуй открыть задания заново.", show_alert=True)
-        return
-
-    done = await is_task_done(db_user.user_id, signature, callback.from_user.language_code)
-    if not done:
-        await callback.answer(
-            "❌ Задание ещё не выполнено.\nВыполни его и нажми «Проверить».",
-            show_alert=True,
-        )
-        return
-
-    # Already saved?
-    already = (await session.execute(
-        select(FlyerServiceCompletion).where(
-            FlyerServiceCompletion.user_id == db_user.user_id,
-            FlyerServiceCompletion.signature == signature,
-        )
-    )).scalar_one_or_none()
-    if already:
-        await callback.answer("Ты уже выполнил это задание!", show_alert=True)
-        return
-
-    session.add(FlyerServiceCompletion(user_id=db_user.user_id, signature=signature))
-    db_user.stars_balance += TASK_REWARD
-    await session.commit()
-    await state.update_data(fs_signature=None)
-
-    await safe_edit(
-        callback,
-        f"✅ <b>+{TASK_REWARD} ⭐ получено!</b>\n\n"
-        f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>",
-        task_done_kb(),
-    )
-    await callback.answer(f"+{TASK_REWARD} ⭐")
-    logger.info("FlyerService task completed by user %s (sig=%s)", db_user.user_id, signature)

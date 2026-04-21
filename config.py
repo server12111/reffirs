@@ -17,6 +17,7 @@ class Config:
     BOTOHUB_KEY: str = os.getenv("BOTOHUB_KEY", "")
     FLYER_KEY: str = os.getenv("FLYER_KEY", "")
     FLYERSERVICE_KEY: str = os.getenv("FLYERSERVICE_KEY", "")
+    FLYERSERVICE_URL: str = os.getenv("FLYERSERVICE_URL", "")
     PIARFLOW_KEY: str = os.getenv("PIARFLOW_KEY", "")
     SUBGRAM_KEY: str = os.getenv("SUBGRAM_KEY", "")
     LINKNI_CODE: str = os.getenv("LINKNI_CODE", os.getenv("TGRASS_CODE", ""))
