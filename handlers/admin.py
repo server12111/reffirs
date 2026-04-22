@@ -932,7 +932,7 @@ async def msg_broadcast(message: Message, state: FSMContext, session: AsyncSessi
 
 # ─── Withdrawal: Approve / Reject (from admin channel) ───────────────────────
 
-@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:"))
+@router.callback_query(lambda c: c.data and c.data.split(":")[1] in ("approve", "reject") and c.data.startswith("withdrawal:"))
 async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, bot: Bot) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
