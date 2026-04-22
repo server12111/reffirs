@@ -73,15 +73,12 @@ def game_detail_kb(game_type: str, is_enabled: bool) -> InlineKeyboardMarkup:
 
 def admin_settings_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⭐ Фикс. награда за реферала", callback_data="settings:referral_reward"))
-    builder.row(InlineKeyboardButton(text="💫 Тип награды за реферала", callback_data="settings:reward_type"))
+    builder.row(InlineKeyboardButton(text="⭐ Награда за реферала", callback_data="settings:referral_reward"))
     builder.row(InlineKeyboardButton(text="⏱ Кулдаун бонуса (часы)", callback_data="settings:bonus_cooldown"))
     builder.row(InlineKeyboardButton(text="🎁 Мин. бонус", callback_data="settings:bonus_min"))
     builder.row(InlineKeyboardButton(text="🎁 Макс. бонус", callback_data="settings:bonus_max"))
     builder.row(InlineKeyboardButton(text="📢 ID канала выплат", callback_data="settings:payments_channel_id"))
     builder.row(InlineKeyboardButton(text="🔗 Ссылка на канал выплат", callback_data="settings:payments_channel_url"))
-    builder.row(InlineKeyboardButton(text="🔄 Режим рефералов", callback_data="settings:referral_mode"))
-    builder.row(InlineKeyboardButton(text="⭐ Звёзд за спонсора", callback_data="settings:stars_per_sponsor"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main"))
     return builder.as_markup()
 

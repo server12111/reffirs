@@ -60,7 +60,6 @@ class AdminSettingsStates(StatesGroup):
     bonus_max = State()
     payments_channel_id = State()
     payments_channel_url = State()
-    stars_per_sponsor = State()
 
 
 class AdminBroadcastStates(StatesGroup):
@@ -741,26 +740,15 @@ async def cb_settings(callback: CallbackQuery, session: AsyncSession) -> None:
     bmax = (await session.get(BotSettings, "bonus_max"))
     pch = (await session.get(BotSettings, "payments_channel_id"))
     pch_url = (await session.get(BotSettings, "payments_channel_url"))
-    mode_row = await session.get(BotSettings, "referral_mode")
-    mode = mode_row.value if mode_row else "botohub_flyer"
-    sps_row = await session.get(BotSettings, "stars_per_sponsor")
-    stars_per_sponsor = float(sps_row.value) if sps_row and sps_row.value else 0.45
-    rt_row = await session.get(BotSettings, "reward_type")
-    reward_type = rt_row.value if rt_row else "per_sponsor"
-    mode_label = "🔵 Спонсоры" if mode == "sponsors" else "🟢 Флаер + БотоХаб"
-    rt_label = "💰 Фиксированная" if reward_type == "fixed" else "📊 За спонсоров"
 
     await callback.message.edit_text(
         f"⚙️ <b>Настройки</b>\n\n"
-        f"⭐ Фикс. награда за реферала: <b>{rr.value if rr else '?'}</b>\n"
-        f"💫 Тип награды: <b>{rt_label}</b>\n"
+        f"⭐ Награда за реферала: <b>{rr.value if rr else '?'}</b>\n"
         f"⏱ Кулдаун бонуса: <b>{bc.value if bc else '?'} ч</b>\n"
         f"🎁 Бонус мин: <b>{bmin.value if bmin else '?'}</b>\n"
         f"🎁 Бонус макс: <b>{bmax.value if bmax else '?'}</b>\n"
         f"📢 ID канала выплат: <b>{pch.value if pch and pch.value else 'не задан'}</b>\n"
-        f"🔗 Ссылка канала: <b>{pch_url.value if pch_url and pch_url.value else 'не задана'}</b>\n"
-        f"🔄 Режим рефералов: <b>{mode_label}</b>\n"
-        f"⭐ Звёзд за спонсора: <b>{stars_per_sponsor}</b>",
+        f"🔗 Ссылка канала: <b>{pch_url.value if pch_url and pch_url.value else 'не задана'}</b>",
         parse_mode="HTML",
         reply_markup=admin_settings_kb(),
     )
@@ -883,72 +871,6 @@ async def msg_set_payments_channel_url(message: Message, state: FSMContext, sess
     )
 
 
-# ─── Settings: Referral mode toggle ─────────────────────────────────────────
-
-@router.callback_query(lambda c: c.data == "settings:referral_mode")
-async def cb_settings_referral_mode(callback: CallbackQuery, session: AsyncSession) -> None:
-    if not is_admin(callback.from_user.id):
-        return
-    row = await session.get(BotSettings, "referral_mode")
-    current = row.value if row else "botohub_flyer"
-    new_mode = "sponsors" if current == "botohub_flyer" else "botohub_flyer"
-    await set_setting(session, "referral_mode", new_mode)
-    await session.commit()
-    mode_label = "🔵 Спонсоры" if new_mode == "sponsors" else "🟢 Флаер + БотоХаб"
-    await callback.answer(f"Режим изменён: {mode_label}", show_alert=True)
-    await cb_settings(callback, session)
-
-
-@router.callback_query(lambda c: c.data == "settings:stars_per_sponsor")
-async def cb_settings_stars_per_sponsor(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    if not is_admin(callback.from_user.id):
-        return
-    row = await session.get(BotSettings, "stars_per_sponsor")
-    current = float(row.value) if row and row.value else 0.45
-    await state.set_state(AdminSettingsStates.stars_per_sponsor)
-    await callback.message.edit_text(
-        f"⭐ Текущее значение звёзд за спонсора: <b>{current}</b>\n\n"
-        f"Введи новое значение (например: 0.45 или 1):",
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.message(AdminSettingsStates.stars_per_sponsor)
-async def msg_set_stars_per_sponsor(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    try:
-        val = float(message.text.strip().replace(",", "."))
-        if val < 0:
-            raise ValueError
-    except ValueError:
-        await message.answer("❌ Введи положительное число:")
-        return
-    await state.clear()
-    await set_setting(session, "stars_per_sponsor", str(val))
-    await session.commit()
-    await message.answer(
-        f"✅ Звёзд за спонсора: <b>{val}</b>",
-        parse_mode="HTML",
-        reply_markup=admin_main_kb(),
-    )
-
-
-# ─── Settings: Reward type toggle ────────────────────────────────────────────
-
-@router.callback_query(lambda c: c.data == "settings:reward_type")
-async def cb_settings_reward_type(callback: CallbackQuery, session: AsyncSession) -> None:
-    if not is_admin(callback.from_user.id):
-        return
-    row = await session.get(BotSettings, "reward_type")
-    current = row.value if row else "per_sponsor"
-    new_type = "fixed" if current == "per_sponsor" else "per_sponsor"
-    await set_setting(session, "reward_type", new_type)
-    await session.commit()
-    label = "💰 Фиксированная" if new_type == "fixed" else "📊 За спонсоров"
-    await callback.answer(f"Тип награды изменён: {label}", show_alert=True)
-    await cb_settings(callback, session)
-
-
 # ─── Broadcast ───────────────────────────────────────────────────────────────
 
 @router.callback_query(lambda c: c.data == "admin:broadcast")
@@ -1053,9 +975,9 @@ async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, b
             except Exception:
                 pass
 
-    try:
-        if user:
-            if action == "approve":
+    if action == "approve":
+        try:
+            if user:
                 approve_content = await get_button_content(session, "withdrawal:approved")
                 if approve_content and (approve_content.text or approve_content.photo_file_id):
                     raw_text = approve_content.text or ""
@@ -1075,13 +997,84 @@ async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, b
                         f"💸 Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> одобрена!",
                         parse_mode="HTML",
                     )
-            else:
+        except Exception:
+            pass
+    else:
+        # Ask admin whether to return stars — user notified only after admin's choice
+        try:
+            await callback.message.reply(
+                f"↩️ Вернуть <b>{withdrawal.amount:.0f} ⭐</b> пользователю @{uname}?",
+                parse_mode="HTML",
+                reply_markup=withdrawal_return_kb(withdrawal.id),
+            )
+        except Exception:
+            pass
+
+
+# ─── Withdrawal: Return / No-return (admin choice after reject) ──────────────
+
+@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:return:"))
+async def cb_withdrawal_return(callback: CallbackQuery, session: AsyncSession, bot: Bot) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    try:
+        withdrawal_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        return await callback.answer("Ошибка.", show_alert=True)
+
+    withdrawal = await session.get(Withdrawal, withdrawal_id)
+    if not withdrawal or withdrawal.status != "rejected":
+        return await callback.answer("Заявка не найдена или уже обработана.", show_alert=True)
+
+    user = await session.get(User, withdrawal.user_id)
+    if user:
+        user.stars_balance += withdrawal.amount
+    withdrawal.status = "refunded"
+    await session.commit()
+
+    try:
+        await callback.message.edit_text("✅ Звёзды возвращены на баланс пользователю.", parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer("✅ Возвращено!")
+
+    try:
+        if user:
+            await bot.send_message(
+                user.user_id,
+                f"↩️ Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> отклонена.\n"
+                f"Средства возвращены на ваш баланс.",
+                parse_mode="HTML",
+            )
+    except Exception:
+        pass
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:noreturn:"))
+async def cb_withdrawal_noreturn(callback: CallbackQuery, session: AsyncSession, bot: Bot) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    try:
+        withdrawal_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        return await callback.answer("Ошибка.", show_alert=True)
+
+    withdrawal = await session.get(Withdrawal, withdrawal_id)
+
+    try:
+        await callback.message.edit_text("✖️ Средства не возвращены.", parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+    try:
+        if withdrawal:
+            user = await session.get(User, withdrawal.user_id)
+            if user:
                 await bot.send_message(
-                    withdrawal.user_id,
-                    f"❌ Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> отклонена.\n\n"
-                    f"Хотите вернуть <b>{withdrawal.amount:.0f} ⭐</b> на баланс?",
+                    user.user_id,
+                    f"❌ Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> отклонена.",
                     parse_mode="HTML",
-                    reply_markup=withdrawal_return_kb(withdrawal.id),
                 )
     except Exception:
         pass
