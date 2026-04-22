@@ -17,25 +17,10 @@ router = Router()
 async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
     ref_link = f"https://t.me/{config.BOT_USERNAME}?start=ref_{db_user.user_id}"
 
-    # Расчёт/отображение награды за реферала
-    import json
     from database.models import BotSettings
-    rt_row = await session.get(BotSettings, "reward_type")
-    reward_type = rt_row.value if rt_row else "per_sponsor"
-    sps_row = await session.get(BotSettings, "stars_per_sponsor")
-    stars_per_sponsor = float(sps_row.value) if sps_row and sps_row.value else 0.45
-
-    if reward_type == "fixed":
-        rr_row = await session.get(BotSettings, "referral_reward")
-        reward = float(rr_row.value) if rr_row and rr_row.value else 0.0
-        reward_line = f"💰 <b>Награда за реферала: {reward} ⭐</b>"
-    else:
-        reward_line = (
-            f"💰 <b>Награда за реферала — динамическая</b>\n"
-            f"Бот назначит тебе каналы спонсоров для подписки.\n"
-            f"За каждый канал ты получишь <b>{stars_per_sponsor} ⭐</b>.\n"
-            f"Чем больше спонсоров назначит бот — тем выше твоя награда! 🚀"
-        )
+    rr_row = await session.get(BotSettings, "referral_reward")
+    reward = float(rr_row.value) if rr_row and rr_row.value else 0.0
+    reward_line = f"💰 <b>Награда за реферала: {reward} ⭐</b>"
 
     ref_suffix = pe(
         f"👥 Ты пригласил: <b>{db_user.referrals_count}</b> чел.\n\n"

@@ -213,3 +213,43 @@ async def msg_captcha_answer(
                 parse_mode="HTML",
                 reply_markup=captcha_cancel_kb(),
             )
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:return:"))
+async def cb_withdrawal_return(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
+    try:
+        withdrawal_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка.", show_alert=True)
+        return
+
+    withdrawal = await session.get(Withdrawal, withdrawal_id)
+    if not withdrawal or withdrawal.user_id != db_user.user_id:
+        await callback.answer("Заявка не найдена.", show_alert=True)
+        return
+    if withdrawal.status != "rejected":
+        await callback.answer("Заявка уже обработана.", show_alert=True)
+        return
+
+    db_user.stars_balance += withdrawal.amount
+    withdrawal.status = "refunded"
+    await session.commit()
+
+    try:
+        await callback.message.edit_text(
+            f"✅ <b>{withdrawal.amount:.0f} ⭐ возвращены на баланс.</b>\n\n"
+            f"Текущий баланс: <b>{db_user.stars_balance:.2f} ⭐</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    await callback.answer("✅ Звёзды возвращены!")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:noreturn:"))
+async def cb_withdrawal_noreturn(callback: CallbackQuery) -> None:
+    try:
+        await callback.message.edit_text("✖️ Заявка закрыта.", parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()

@@ -11,7 +11,7 @@ from handlers.button_helper import answer_with_content, send_with_content
 from keyboards.botohub import build_combined_wall_kb
 from keyboards.main import main_menu_kb
 from config import config
-from services.referral import grant_referral_reward_if_pending
+from services.referral import grant_referral_reward_if_pending, notify_referrer_joined
 from services.flyer import get_flyer_tasks
 from services.piarflow import get_piarflow_tasks
 from services.subgram import get_subgram_sponsors
@@ -83,6 +83,7 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
 
     if is_new and user.referrer_id:
         await message.answer("👋 Добро пожаловать! Ты перешёл по реферальной ссылке.")
+        await notify_referrer_joined(user, session, message.bot)
 
     # ── Combined subscription wall (all integrations) ──
     if message.from_user.id not in config.ADMIN_IDS:

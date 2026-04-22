@@ -19,7 +19,7 @@ from keyboards.admin import (
     task_management_kb, task_type_kb, task_list_admin_kb, task_actions_kb,
     games_list_kb, game_detail_kb,
     BUTTON_KEYS, button_content_list_kb, button_edit_kb,
-    retention_kb, stats_tabs_kb,
+    retention_kb, stats_tabs_kb, withdrawal_return_kb,
 )
 from keyboards.lottery import admin_lottery_kb, admin_lottery_pick_kb
 from config import config
@@ -197,8 +197,11 @@ async def cb_stats_daily(callback: CallbackQuery, session: AsyncSession) -> None
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
 
-    lines = []
-    for i in range(7):
+    await callback.answer("Генерирую график...")
+
+    labels, new_users_data, referrals_data = [], [], []
+
+    for i in range(6, -1, -1):
         day = _date.today() - timedelta(days=i)
         day_start = datetime.combine(day, datetime.min.time())
         day_end = datetime.combine(day + timedelta(days=1), datetime.min.time())
@@ -208,37 +211,78 @@ async def cb_stats_daily(callback: CallbackQuery, session: AsyncSession) -> None
                 User.created_at >= day_start, User.created_at < day_end
             )
         )).scalar() or 0
-        games_count = (await session.execute(
-            select(func.count(GameSession.id)).where(
-                GameSession.played_at >= day_start, GameSession.played_at < day_end
+        referrals = (await session.execute(
+            select(func.count(User.user_id)).where(
+                User.created_at >= day_start, User.created_at < day_end,
+                User.referrer_id.isnot(None),
             )
         )).scalar() or 0
-        bets_sum = (await session.execute(
-            select(func.coalesce(func.sum(GameSession.bet), 0)).where(
-                GameSession.played_at >= day_start, GameSession.played_at < day_end
-            )
-        )).scalar() or 0.0
-        payouts_sum = (await session.execute(
-            select(func.coalesce(func.sum(GameSession.payout), 0)).where(
-                GameSession.played_at >= day_start, GameSession.played_at < day_end,
-                GameSession.result == "win",
-            )
-        )).scalar() or 0.0
-        revenue = round(bets_sum - payouts_sum, 2)
 
-        label = "Сегодня" if i == 0 else ("Вчера" if i == 1 else day.strftime("%d.%m"))
-        lines.append(f"📅 <b>{label}</b>: 👥+{new_users} | 🎮{games_count} | 💰{revenue:.1f}⭐")
+        label = "Сег." if i == 0 else ("Вчера" if i == 1 else day.strftime("%d.%m"))
+        labels.append(label)
+        new_users_data.append(new_users)
+        referrals_data.append(referrals)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:stats")
-    ]])
-    await callback.message.edit_text(
-        "📅 <b>Статистика по дням (7 дней)</b>\n\n" + "\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=back_kb,
-    )
-    await callback.answer()
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        x = np.arange(len(labels))
+        width = 0.35
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        fig.patch.set_facecolor("#1e1e2e")
+        ax.set_facecolor("#1e1e2e")
+
+        bars1 = ax.bar(x - width / 2, new_users_data, width, label="Новых юзеров", color="#7c3aed")
+        bars2 = ax.bar(x + width / 2, referrals_data, width, label="По рефералке", color="#06b6d4")
+
+        ax.set_title("Статистика за 7 дней", color="white", fontsize=14, pad=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, color="white")
+        ax.tick_params(axis="y", colors="white")
+        ax.spines[:].set_color("#444")
+        ax.legend(facecolor="#2d2d3e", labelcolor="white", edgecolor="#444")
+
+        for bar in (*bars1, *bars2):
+            h = bar.get_height()
+            if h > 0:
+                ax.text(bar.get_x() + bar.get_width() / 2, h + 0.1, str(int(h)),
+                        ha="center", va="bottom", color="white", fontsize=9)
+
+        plt.tight_layout()
+        buf = BytesIO()
+        plt.savefig(buf, format="png", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        buf.seek(0)
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="◀️ Назад", callback_data="admin:stats")
+        ]])
+        await callback.message.answer_photo(
+            BufferedInputFile(buf.read(), filename="stats.png"),
+            caption="📊 <b>Статистика за 7 дней</b>",
+            parse_mode="HTML",
+            reply_markup=back_kb,
+        )
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    except ImportError:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="◀️ Назад", callback_data="admin:stats")
+        ]])
+        lines = [f"📅 <b>{labels[i]}</b>: 👥+{new_users_data[i]} | 🔗{referrals_data[i]}" for i in range(7)]
+        await callback.message.edit_text(
+            "📅 <b>Статистика по дням (7 дней)</b>\n\n" + "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=back_kb,
+        )
 
 
 @router.callback_query(lambda c: c.data == "admin:stats_games")
@@ -984,21 +1028,16 @@ async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, b
     withdrawal.processed_at = datetime.utcnow()
 
     user = await session.get(User, withdrawal.user_id)
-    if action == "reject" and user:
-        user.stars_balance += withdrawal.amount
-
     await session.commit()
 
     status_text = "✅ Принята" if action == "approve" else "❌ Отклонена"
 
-    # Update admin channel message (remove buttons, keep text)
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
     await callback.answer(status_text)
 
-    # Edit payments channel message with updated status
     uname = user.username if user else "unknown"
     uid = withdrawal.user_id
     if withdrawal.payments_message_id:
@@ -1014,7 +1053,6 @@ async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, b
             except Exception:
                 pass
 
-    # Notify user
     try:
         if user:
             if action == "approve":
@@ -1040,8 +1078,10 @@ async def cb_withdrawal_action(callback: CallbackQuery, session: AsyncSession, b
             else:
                 await bot.send_message(
                     withdrawal.user_id,
-                    f"❌ Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> отклонена.",
+                    f"❌ Ваша заявка на вывод <b>{withdrawal.amount:.0f} ⭐</b> отклонена.\n\n"
+                    f"Хотите вернуть <b>{withdrawal.amount:.0f} ⭐</b> на баланс?",
                     parse_mode="HTML",
+                    reply_markup=withdrawal_return_kb(withdrawal.id),
                 )
     except Exception:
         pass

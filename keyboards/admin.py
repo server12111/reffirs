@@ -9,6 +9,7 @@ def admin_main_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="📋 Управление заданиями", callback_data="admin:tasks"))
     builder.row(InlineKeyboardButton(text="🎮 Управление играми", callback_data="admin:games"))
     builder.row(InlineKeyboardButton(text="🖼 Фото и текст кнопок", callback_data="admin:button_content"))
+
     builder.row(InlineKeyboardButton(text="👥 Статистика", callback_data="admin:stats"))
     builder.row(
         InlineKeyboardButton(text="💳 Начислить звёзды", callback_data="admin:credit"),
@@ -19,11 +20,11 @@ def admin_main_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin:settings"),
         InlineKeyboardButton(text="📢 Рассылка", callback_data="admin:broadcast"),
     )
-    builder.row(InlineKeyboardButton(text="🔌 Інтеграції", callback_data="admin:integrations"))
+    builder.row(InlineKeyboardButton(text="🔌 Интеграции", callback_data="admin:integrations"))
     builder.row(InlineKeyboardButton(text="🔔 Удержание", callback_data="admin:retention"))
     builder.row(
-        InlineKeyboardButton(text="📤 Експорт БД", callback_data="admin:db_export"),
-        InlineKeyboardButton(text="📥 Імпорт БД", callback_data="admin:db_import"),
+        InlineKeyboardButton(text="📤 Экспорт БД", callback_data="admin:db_export"),
+        InlineKeyboardButton(text="📥 Импорт БД", callback_data="admin:db_import"),
     )
     builder.row(InlineKeyboardButton(text="🎟 Лотерея", callback_data="admin:lottery"))
     return builder.as_markup()
@@ -126,6 +127,17 @@ def withdrawal_actions_kb(withdrawal_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="✅ Принять", callback_data=f"withdrawal:approve:{withdrawal_id}"),
                 InlineKeyboardButton(text="❌ Отклонить", callback_data=f"withdrawal:reject:{withdrawal_id}"),
+            ]
+        ]
+    )
+
+
+def withdrawal_return_kb(withdrawal_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="↩️ Вернуть на баланс", callback_data=f"withdrawal:return:{withdrawal_id}"),
+                InlineKeyboardButton(text="✖️ Не возвращать", callback_data=f"withdrawal:noreturn:{withdrawal_id}"),
             ]
         ]
     )

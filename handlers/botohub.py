@@ -35,10 +35,12 @@ async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> No
     result = await check_botohub(callback.from_user.id)
 
     if result["completed"] or result["skip"]:
-        # Subscription confirmed — give referral reward if still pending
         db_user = await session.get(User, callback.from_user.id)
         if db_user and db_user.referral_reward_pending:
             await grant_referral_reward_if_pending(db_user, session, callback.bot)
+
+        import asyncio as _asyncio
+        _asyncio.create_task(show_gramads(callback.from_user.id))
 
         default_text = (
             "👋 <b>Главное меню</b>\n\n"
