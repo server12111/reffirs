@@ -13,9 +13,9 @@ def build_botohub_wall_kb(tasks: list[str]) -> InlineKeyboardMarkup:
 
 def build_combined_wall_kb(
     botohub_tasks: list[str],
-    flyer_tasks: list[dict],
+    flyer_tasks: list[dict],      # kept for signature compat, no longer used
     custom_sponsors: list[dict],
-    piarflow_tasks: list[str] | None = None,
+    piarflow_tasks: list[str] | None = None,   # kept for compat, no longer used
     subgram_sponsors: list[dict] | None = None,
     linkni_url: str | None = None,
     tgrass_url: str | None = None,
@@ -33,31 +33,13 @@ def build_combined_wall_kb(
         buttons.append([InlineKeyboardButton(text=label, url=sp["link"], style="primary", icon_custom_emoji_id="5370599459661045441")])
         i += 1
 
-    # PiarFlow third
-    for url in (piarflow_tasks or []):
-        buttons.append([InlineKeyboardButton(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")])
-        i += 1
-
-    # BotoHub fourth
+    # BotoHub third
     for url in (botohub_tasks or []):
         buttons.append([InlineKeyboardButton(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")])
         i += 1
 
-    # Flyer fifth
-    for task in (flyer_tasks or []):
-        url = (
-            task.get("url")
-            or task.get("link")
-            or task.get("invite_link")
-            or task.get("channel_url")
-            or ""
-        )
-        if url:
-            buttons.append([InlineKeyboardButton(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")])
-            i += 1
-
     for sp in (custom_sponsors or []):
-        buttons.append([InlineKeyboardButton(text=sp['title'], url=sp["link"], style="primary", icon_custom_emoji_id="5370599459661045441")])
+        buttons.append([InlineKeyboardButton(text=sp["title"], url=sp["link"], style="primary", icon_custom_emoji_id="5370599459661045441")])
 
     if linkni_url:
         buttons.append([InlineKeyboardButton(text="Linkni — подписаться", url=linkni_url, style="primary", icon_custom_emoji_id="5271604874419647061")])

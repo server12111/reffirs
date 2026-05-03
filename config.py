@@ -22,6 +22,7 @@ class Config:
     SUBGRAM_KEY: str = os.getenv("SUBGRAM_KEY", "")
     LINKNI_CODE: str = os.getenv("LINKNI_CODE", os.getenv("TGRASS_CODE", ""))
     GRAMADS_TOKEN: str = os.getenv("GRAMADS_TOKEN", "")
+    BOTOHUB_VIEWS_KEY: str = os.getenv("BOTOHUB_VIEWS_KEY", "")
     BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")
     REFERRAL_REWARD: float = float(os.getenv("REFERRAL_REWARD", "5"))
     BONUS_COOLDOWN_HOURS: int = int(os.getenv("BONUS_COOLDOWN_HOURS", "24"))

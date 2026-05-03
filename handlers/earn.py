@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -11,24 +11,6 @@ from database.engine import get_button_content
 from utils.emoji import pe, strip_pe
 
 router = Router()
-
-
-def _earn_kb(user_id: int) -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(
-            text="📺 Смотреть рекламу (BotoHub)",
-            url=f"https://t.me/botohub_views_bot?start={user_id}",
-            style="primary",
-            icon_custom_emoji_id="5271604874419647061",
-        )],
-        [InlineKeyboardButton(
-            text="Назад",
-            callback_data="menu:main",
-            style="danger",
-            icon_custom_emoji_id="5318991467639756533",
-        )],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 @router.callback_query(lambda c: c.data == "menu:earn")
@@ -52,14 +34,13 @@ async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User)
         "• Друг должен запустить бота по твоей ссылке\n"
         "• Один пользователь засчитывается только один раз\n"
         "• Выплата — мгновенно после регистрации\n\n"
-        "📺 Также можешь заработать звёзды, просматривая рекламу!\n\n"
     )
 
     content = await get_button_content(session, "menu:earn")
     has_photo = bool(content and content.photo_file_id)
     text = ((content.text if content and content.text else None) or default_body) + ref_suffix
 
-    kb = _earn_kb(db_user.user_id)
+    kb = back_to_menu_kb()
     if has_photo:
         try:
             await callback.message.delete()

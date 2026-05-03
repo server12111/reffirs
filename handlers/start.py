@@ -12,10 +12,10 @@ from keyboards.botohub import build_combined_wall_kb
 from keyboards.main import main_menu_kb
 from config import config
 from services.referral import grant_referral_reward_if_pending, notify_referrer_joined
-from services.flyer import get_flyer_tasks
-from services.piarflow import get_piarflow_tasks
 from services.subgram import get_subgram_sponsors
 from services.tgrass import check_tgrass_subscription, get_tgrass_wall_url
+from services.gramads import show_gramads
+from services.botohub_views import show_botohub_views
 from utils.botohub_api import check_botohub
 from utils.emoji import pe
 
@@ -86,53 +86,40 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         await message.answer("👋 Добро пожаловать! Ты перешёл по реферальной ссылке.")
         await notify_referrer_joined(user, session, message.bot)
 
-    # ── Combined subscription wall (all integrations) ──
+    # ── Combined subscription wall (TGrass + Subgram + BotoHub) ──
     if message.from_user.id not in config.ADMIN_IDS:
         user_id = message.from_user.id
-        language_code = message.from_user.language_code
 
-        # Read enabled flags and counts from DB
         async def _flag(k, default):
             r = await session.get(BotSettings, k)
             return (r.value == "1") if r else default
 
         bh_on = await _flag("integration_botohub_enabled", True)
-        fl_on = await _flag("integration_flyer_enabled", True)
-        pf_on = await _flag("integration_piarflow_enabled", False)
         sg_on = await _flag("integration_subgram_enabled", False)
         tg_on = await _flag("integration_tgrass_enabled", False)
 
-        pf_count_row = await session.get(BotSettings, "piarflow_count")
-        pf_count = int(pf_count_row.value) if pf_count_row and pf_count_row.value else 5
         sg_count_row = await session.get(BotSettings, "subgram_count")
         sg_count = int(sg_count_row.value) if sg_count_row and sg_count_row.value else 5
 
         async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
-        async def _skip_pf(): return {"completed": True, "skip": True, "tasks": []}
         async def _skip_list(): return []
         async def _skip_bool(): return True
 
-        # Check all integrations in parallel — single wall
-        tgrass_ok, sg_sponsors, pf_result, bh_result, flyer_tasks = await asyncio.gather(
+        tgrass_ok, sg_sponsors, bh_result = await asyncio.gather(
             check_tgrass_subscription(user_id) if tg_on else _skip_bool(),
             get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
-            get_piarflow_tasks(user_id, pf_count) if pf_on else _skip_pf(),
             check_botohub(user_id) if bh_on else _skip_bh(),
-            get_flyer_tasks(user_id, language_code) if fl_on else _skip_list(),
         )
 
         tgrass_url = get_tgrass_wall_url() if (tg_on and not tgrass_ok) else None
-        pf_pending = pf_on and not pf_result["completed"] and not pf_result["skip"] and bool(pf_result["tasks"])
         bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
-        flyer_pending = fl_on and bool(flyer_tasks)
         sg_pending = sg_on and bool(sg_sponsors)
 
-        if tgrass_url or sg_pending or pf_pending or bh_pending or flyer_pending:
+        if tgrass_url or sg_pending or bh_pending:
             kb = build_combined_wall_kb(
                 bh_result["tasks"] if bh_pending else [],
-                flyer_tasks if flyer_pending else [],
                 [],
-                piarflow_tasks=pf_result["tasks"] if pf_pending else [],
+                [],
                 subgram_sponsors=sg_sponsors if sg_pending else [],
                 tgrass_url=tgrass_url,
             )
@@ -142,8 +129,10 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
             )
             return
 
-    # User passed both subscription walls — give referral reward if still pending
+    # User passed subscription wall — give referral reward + show ads
     await grant_referral_reward_if_pending(user, session, message.bot)
+    asyncio.create_task(show_gramads(message.from_user.id))
+    asyncio.create_task(show_botohub_views(message.from_user.id, hi=True))
 
     default_text = pe(
         "👋 <b>Добро пожаловать!</b>\n\n"
