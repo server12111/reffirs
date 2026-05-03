@@ -2814,12 +2814,20 @@ async def cb_admin_task_reject(callback: CallbackQuery, session: AsyncSession) -
     task = await session.get(Task, task_id)
     if not task:
         return await callback.answer("Задание не найдено.", show_alert=True)
-    # Refund creator
-    if task.creator_id:
-        creator = await session.get(User, task.creator_id)
-        if creator:
-            total_cost = round(task.reward * (1 + 0.15), 2)
-            creator.stars_balance += total_cost
+    # Refund creator for remaining (uncompleted) slots
+    refund = 0.0
+    remaining_slots = 0
+    if task.creator_id and task.max_completions > 0:
+        from sqlalchemy import func as _sfunc
+        done_count = (await session.execute(
+            select(_sfunc.count(TaskCompletion.id)).where(TaskCompletion.task_id == task.id)
+        )).scalar() or 0
+        remaining_slots = max(0, task.max_completions - done_count)
+        refund = round(task.reward * remaining_slots * 1.15, 2)
+        if refund > 0:
+            creator = await session.get(User, task.creator_id)
+            if creator:
+                creator.stars_balance += refund
     task.is_active = False
     task.is_approved = False
     await session.commit()
@@ -2833,12 +2841,9 @@ async def cb_admin_task_reject(callback: CallbackQuery, session: AsyncSession) -
     await callback.answer("❌ Задание отклонено!")
     if task.creator_id:
         try:
-            total_cost = round(task.reward * 1.15, 2)
-            await callback.bot.send_message(
-                task.creator_id,
-                f"❌ Твоё задание <b>#{task.id}</b> отклонено.\n"
-                f"Средства <b>{total_cost:.2f} ⭐</b> возвращены на баланс.",
-                parse_mode="HTML",
-            )
+            msg = f"❌ Твоё задание <b>#{task.id}</b> отклонено."
+            if refund > 0:
+                msg += f"\nВозврат за {remaining_slots} оставшихся слотов: <b>{refund:.2f} ⭐</b>"
+            await callback.bot.send_message(task.creator_id, msg, parse_mode="HTML")
         except Exception:
             pass

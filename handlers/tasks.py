@@ -70,7 +70,7 @@ async def _show_next_task(
         display_reward = (
             round(task.reward * task.creator_reward_rate, 2)
             if task.creator_id and task.creator_reward_rate > 0
-            else TASK_REWARD
+            else task.reward
         )
         text = pe(
             f"📋 <b>{task.title}</b>\n\n"
@@ -184,7 +184,7 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
     if task.creator_id and task.creator_reward_rate > 0:
         completer_reward = round(task.reward * task.creator_reward_rate, 2)
     else:
-        completer_reward = TASK_REWARD
+        completer_reward = task.reward
 
     session.add(TaskCompletion(user_id=db_user.user_id, task_id=task_id))
     db_user.stars_balance += completer_reward
@@ -194,7 +194,7 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
         done_count = (await session.execute(
             select(_func.count(TaskCompletion.id)).where(TaskCompletion.task_id == task_id)
         )).scalar() or 0
-        if done_count + 1 >= task.max_completions:
+        if done_count >= task.max_completions:
             task.is_active = False
 
     await session.commit()
