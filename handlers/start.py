@@ -13,7 +13,6 @@ from keyboards.main import main_menu_kb
 from config import config
 from services.referral import grant_referral_reward_if_pending, notify_referrer_joined
 from services.subgram import get_subgram_sponsors
-from services.tgrass import check_tgrass_subscription, get_tgrass_wall_url
 from services.botohub_views import show_botohub_views
 from utils.botohub_api import check_botohub
 from utils.emoji import pe
@@ -85,7 +84,7 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         await message.answer("👋 Добро пожаловать! Ты перешёл по реферальной ссылке.")
         await notify_referrer_joined(user, session, message.bot)
 
-    # ── Combined subscription wall (TGrass + Subgram + BotoHub) ──
+    # ── Combined subscription wall (Subgram + BotoHub) ──
     if message.from_user.id not in config.ADMIN_IDS:
         user_id = message.from_user.id
 
@@ -93,34 +92,27 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
             r = await session.get(BotSettings, k)
             return (r.value == "1") if r else default
 
-        bh_on = await _flag("integration_botohub_enabled", True)
-        sg_on = await _flag("integration_subgram_enabled", False)
-        tg_on = await _flag("integration_tgrass_enabled", False)
+        bh_on = await _flag("integration_botohub_enabled", bool(config.BOTOHUB_KEY))
+        sg_on = await _flag("integration_subgram_enabled", bool(config.SUBGRAM_KEY))
 
         sg_count_row = await session.get(BotSettings, "subgram_count")
         sg_count = int(sg_count_row.value) if sg_count_row and sg_count_row.value else 5
 
         async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
         async def _skip_list(): return []
-        async def _skip_bool(): return True
 
-        tgrass_ok, sg_sponsors, bh_result = await asyncio.gather(
-            check_tgrass_subscription(user_id) if tg_on else _skip_bool(),
+        sg_sponsors, bh_result = await asyncio.gather(
             get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
             check_botohub(user_id) if bh_on else _skip_bh(),
         )
 
-        tgrass_url = get_tgrass_wall_url() if (tg_on and not tgrass_ok) else None
         bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
         sg_pending = sg_on and bool(sg_sponsors)
 
-        if tgrass_url or sg_pending or bh_pending:
+        if sg_pending or bh_pending:
             kb = build_combined_wall_kb(
                 bh_result["tasks"] if bh_pending else [],
-                [],
-                [],
                 subgram_sponsors=sg_sponsors if sg_pending else [],
-                tgrass_url=tgrass_url,
             )
             await message.answer(
                 pe("📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>"),
@@ -130,7 +122,9 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
 
     # User passed subscription wall — give referral reward + show ads
     await grant_referral_reward_if_pending(user, session, message.bot)
-    asyncio.create_task(show_botohub_views(message.from_user.id, hi=True))
+    ad_sent = await show_botohub_views(message.from_user.id, hi=True)
+    if ad_sent:
+        await asyncio.sleep(0.5)
 
     default_text = pe(
         "👋 <b>Добро пожаловать!</b>\n\n"

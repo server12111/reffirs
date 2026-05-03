@@ -1,9 +1,9 @@
 from aiogram import Router
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
-from database.models import User
+from database.models import User, TaskCompletion
 from handlers.button_helper import answer_with_content
 from keyboards.main import back_to_menu_kb
 from config import config
@@ -22,8 +22,13 @@ async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User)
     reward = float(rr_row.value) if rr_row and rr_row.value else 0.0
     reward_line = f"💰 <b>Награда за реферала: {reward} ⭐</b>"
 
+    tasks_done = (await session.execute(
+        select(func.count(TaskCompletion.task_id)).where(TaskCompletion.user_id == db_user.user_id)
+    )).scalar() or 0
+
     ref_suffix = pe(
-        f"👥 Ты пригласил: <b>{db_user.referrals_count}</b> чел.\n\n"
+        f"👥 Ты пригласил: <b>{db_user.referrals_count}</b> чел.\n"
+        f"📋 Выполнено заданий: <b>{tasks_done}</b>\n\n"
         f"🔗 <b>Твоя реферальная ссылка:</b>\n<code>{ref_link}</code>"
     )
     default_body = pe(

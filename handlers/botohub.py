@@ -29,7 +29,9 @@ async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> No
         if db_user and db_user.referral_reward_pending:
             await grant_referral_reward_if_pending(db_user, session, callback.bot)
 
-        asyncio.create_task(show_botohub_views(callback.from_user.id))
+        ad_sent = await show_botohub_views(callback.from_user.id)
+        if ad_sent:
+            await asyncio.sleep(0.5)
 
         default_text = (
             "👋 <b>Главное меню</b>\n\n"
@@ -67,52 +69,47 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
     """
     user_id = callback.from_user.id
 
+    from config import config as _cfg
+
     async def _flag(k, default):
         r = await session.get(BotSettings, k)
-        return (r.value == "1") if r else default
+        if r is None:
+            return default
+        return r.value == "1"
 
-    bh_on = await _flag("integration_botohub_enabled", True)
-    sg_on = await _flag("integration_subgram_enabled", False)
-    tg_on = await _flag("integration_tgrass_enabled", False)
+    bh_on = await _flag("integration_botohub_enabled", bool(_cfg.BOTOHUB_KEY))
+    sg_on = await _flag("integration_subgram_enabled", bool(_cfg.SUBGRAM_KEY))
 
     sg_count_row = await session.get(BotSettings, "subgram_count")
     sg_count = int(sg_count_row.value) if sg_count_row and sg_count_row.value else 5
 
     async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
     async def _skip_list(): return []
-    async def _skip_bool(): return True
 
-    from services.tgrass import check_tgrass_subscription, get_tgrass_wall_url
-
-    tgrass_ok, sg_sponsors, bh_result = await asyncio.gather(
-        check_tgrass_subscription(user_id) if tg_on else _skip_bool(),
+    sg_sponsors, bh_result = await asyncio.gather(
         get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
         check_botohub(user_id) if bh_on else _skip_bh(),
     )
 
-    tgrass_url = get_tgrass_wall_url() if (tg_on and not tgrass_ok) else None
     bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
     sg_pending = sg_on and bool(sg_sponsors)
 
-    if tgrass_url or sg_pending or bh_pending:
+    if sg_pending or bh_pending:
         await callback.answer(
             "❌ Вы не подписались на все каналы.\nПодпишитесь и нажмите кнопку снова.",
             show_alert=True,
         )
         wall_kb = build_combined_wall_kb(
             bh_result["tasks"] if bh_pending else [],
-            [],
-            [],
             subgram_sponsors=sg_sponsors if sg_pending else [],
-            tgrass_url=tgrass_url,
         )
         try:
             await callback.message.edit_reply_markup(reply_markup=wall_kb)
         except Exception:
             pass
         logger.info(
-            "CombinedWall: user %s still blocked (tg=%s, sg=%s, bh=%s)",
-            user_id, bool(tgrass_url), sg_pending, bh_pending,
+            "CombinedWall: user %s still blocked (sg=%s, bh=%s)",
+            user_id, sg_pending, bh_pending,
         )
         return
 
@@ -121,7 +118,9 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
     if db_user and db_user.referral_reward_pending:
         await grant_referral_reward_if_pending(db_user, session, callback.bot)
 
-    asyncio.create_task(show_botohub_views(user_id))
+    ad_sent = await show_botohub_views(user_id)
+    if ad_sent:
+        await asyncio.sleep(0.5)
 
     default_text = (
         "👋 <b>Главное меню</b>\n\n"

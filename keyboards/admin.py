@@ -172,7 +172,6 @@ def task_type_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📢 Подписка на канал", callback_data="task_type:subscribe"),
         InlineKeyboardButton(text="👥 Рефералы", callback_data="task_type:referrals"),
     )
-    builder.row(InlineKeyboardButton(text="🔗 Linkni", callback_data="task_type:linkni"))
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="admin:tasks"))
     return builder.as_markup()
 
@@ -285,10 +284,7 @@ def integrations_kb(statuses: dict) -> InlineKeyboardMarkup:
         ))
 
     _row("BotoHub", "botohub")
-    _row("Flyer", "flyer")
-    _row("PiarFlow", "piarflow")
     _row("Subgram", "subgram")
-    _row("Linkni (Tgrass)", "linkni")
     _row("GramAds (реклама)", "gramads")
 
     builder.row(InlineKeyboardButton(text="📊 Кількість спонсорів", callback_data="integration:counts"))
@@ -300,7 +296,6 @@ def integrations_kb(statuses: dict) -> InlineKeyboardMarkup:
 def integration_counts_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="BotoHub — кількість", callback_data="integration:count:botohub"))
-    builder.row(InlineKeyboardButton(text="PiarFlow — кількість", callback_data="integration:count:piarflow"))
     builder.row(InlineKeyboardButton(text="Subgram — кількість", callback_data="integration:count:subgram"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin:integrations"))
     return builder.as_markup()
@@ -309,10 +304,7 @@ def integration_counts_kb() -> InlineKeyboardMarkup:
 def integration_keys_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔑 BotoHub key", callback_data="integration:key:botohub"))
-    builder.row(InlineKeyboardButton(text="🔑 Flyer key", callback_data="integration:key:flyer"))
-    builder.row(InlineKeyboardButton(text="🔑 PiarFlow key", callback_data="integration:key:piarflow"))
     builder.row(InlineKeyboardButton(text="🔑 Subgram key", callback_data="integration:key:subgram"))
-    builder.row(InlineKeyboardButton(text="🔑 Linkni code", callback_data="integration:key:linkni"))
     builder.row(InlineKeyboardButton(text="🔑 GramAds token", callback_data="integration:key:gramads"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin:integrations"))
     return builder.as_markup()

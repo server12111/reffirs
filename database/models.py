@@ -83,6 +83,7 @@ class Task(Base):
     creator_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     creator_reward_rate: Mapped[float] = mapped_column(Float, default=0.0)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_completions: Mapped[int] = mapped_column(Integer, default=0)  # 0 = unlimited
 
 
 class TaskCompletion(Base):
@@ -93,23 +94,6 @@ class TaskCompletion(Base):
     task_id: Mapped[int] = mapped_column(Integer, ForeignKey("tasks.id"))
     completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-
-class LinkniCompletion(Base):
-    __tablename__ = "linkni_completions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    entry_key: Mapped[str] = mapped_column(String(512))
-    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
-class FlyerServiceCompletion(Base):
-    __tablename__ = "flyerservice_completions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    signature: Mapped[str] = mapped_column(String(512))
-    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class GameSession(Base):
@@ -164,11 +148,18 @@ class Lottery(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active, finished
     tickets_sold: Mapped[int] = mapped_column(Integer, default=0)
-    total_collected: Mapped[float] = mapped_column(Float, default=0.0)  # real amount (with commission)
-    prize_pool: Mapped[float] = mapped_column(Float, default=0.0)  # 70% shown to users
+    total_collected: Mapped[float] = mapped_column(Float, default=0.0)
+    prize_pool: Mapped[float] = mapped_column(Float, default=0.0)
     winner_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.user_id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     drawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Configurable per-lottery settings
+    end_type: Mapped[str] = mapped_column(String(16), default="tickets")  # tickets | time | commission
+    end_value: Mapped[float] = mapped_column(Float, default=10.0)  # ticket count / unix ts / stars amount
+    ticket_price: Mapped[float] = mapped_column(Float, default=5.0)
+    ticket_limit: Mapped[int] = mapped_column(Integer, default=0)  # 0 = unlimited
+    channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ref_required: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class LotteryTicket(Base):

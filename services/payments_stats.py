@@ -4,6 +4,7 @@ from datetime import datetime
 
 from aiogram import Bot
 from sqlalchemy import select, func
+from utils.emoji import pe
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ async def _update_stats(bot: Bot) -> None:
         users_count = users_result.scalar() or 0
 
         updated_at = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
-        text = (
+        text = pe(
             "📊 <b>Статистика выплат</b>\n\n"
             f"👥 Пользователей: <b>{users_count}</b>\n"
             f"👤 Рефералов: <b>{referrals_count}</b>\n"

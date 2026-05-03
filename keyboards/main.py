@@ -37,14 +37,8 @@ def profile_kb() -> InlineKeyboardMarkup:
 def task_single_kb(task_type: str, identifier: str, url: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if url:
-        btn_text = "Выполнить задание" if task_type in ("linkni", "flyerservice") else "Подписаться"
-        builder.row(InlineKeyboardButton(text=btn_text, url=url, style="primary", icon_custom_emoji_id="5271604874419647061"))
-    if task_type == "linkni":
-        builder.row(InlineKeyboardButton(text="Проверить", callback_data=f"task:linkni:{identifier}", style="success", icon_custom_emoji_id="5462919317832082236"))
-    elif task_type == "flyerservice":
-        builder.row(InlineKeyboardButton(text="Проверить", callback_data="task:flyerservice:check", style="success", icon_custom_emoji_id="5462919317832082236"))
-    else:
-        builder.row(InlineKeyboardButton(text="Проверить", callback_data=f"task:bot:{identifier}", style="success", icon_custom_emoji_id="5462919317832082236"))
+        builder.row(InlineKeyboardButton(text="Подписаться", url=url, style="primary", icon_custom_emoji_id="5271604874419647061"))
+    builder.row(InlineKeyboardButton(text="Проверить", callback_data=f"task:bot:{identifier}", style="success", icon_custom_emoji_id="5462919317832082236"))
     builder.row(
         InlineKeyboardButton(text="Пропустить", callback_data="task:skip", icon_custom_emoji_id="5321335209818339164"),
         InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"),
@@ -52,16 +46,22 @@ def task_single_kb(task_type: str, identifier: str, url: str | None = None) -> I
     return builder.as_markup()
 
 
+def tasks_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="Создать задание", callback_data="tasks:create", style="primary", icon_custom_emoji_id="5435970940670320222"))
+    builder.row(InlineKeyboardButton(text="Выполнять задания", callback_data="tasks:do", style="success", icon_custom_emoji_id="5346105514575025401"))
+    builder.row(InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
+    return builder.as_markup()
+
+
 def task_done_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="Следующее задание", callback_data="menu:tasks", style="success", icon_custom_emoji_id="5346105514575025401"))
+    builder.row(InlineKeyboardButton(text="Следующее задание", callback_data="tasks:do", style="success", icon_custom_emoji_id="5346105514575025401"))
     builder.row(InlineKeyboardButton(text="Главное меню", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
     return builder.as_markup()
 
 
-def tasks_all_done_kb(show_flyerservice: bool = False) -> InlineKeyboardMarkup:
+def tasks_all_done_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if show_flyerservice:
-        builder.row(InlineKeyboardButton(text="Получить награды FlyerService", callback_data="flyerservice:claim", style="success", icon_custom_emoji_id="5438496463044752972"))
     builder.row(InlineKeyboardButton(text="Главное меню", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
     return builder.as_markup()

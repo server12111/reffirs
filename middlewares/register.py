@@ -72,24 +72,23 @@ class CombinedWallMiddleware(BaseMiddleware):
         try:
             from utils.botohub_api import check_botohub
             from services.subgram import get_subgram_sponsors
-            from services.tgrass import check_tgrass_subscription, get_tgrass_wall_url
             from utils.emoji import pe
 
             session2 = data.get("session")
-            _bh_on = True
-            _sg_on = False
-            _tg_on = False
+            _bh_on = bool(config.BOTOHUB_KEY)
+            _sg_on = bool(config.SUBGRAM_KEY)
             _sg_count = 5
             if session2:
                 from database.models import BotSettings as _BS2
 
                 async def _flag(k, default):
                     r = await session2.get(_BS2, k)
-                    return (r.value == "1") if r else default
+                    if r is None:
+                        return default
+                    return r.value == "1"
 
-                _bh_on = await _flag("integration_botohub_enabled", True)
-                _sg_on = await _flag("integration_subgram_enabled", False)
-                _tg_on = await _flag("integration_tgrass_enabled", False)
+                _bh_on = await _flag("integration_botohub_enabled", _bh_on)
+                _sg_on = await _flag("integration_subgram_enabled", _sg_on)
                 _sg_row = await session2.get(_BS2, "subgram_count")
                 if _sg_row and _sg_row.value:
                     _sg_count = int(_sg_row.value)
@@ -100,29 +99,20 @@ class CombinedWallMiddleware(BaseMiddleware):
             async def _skip_list():
                 return []
 
-            async def _skip_bool():
-                return True
-
-            # Check TGrass + Subgram + BotoHub in parallel (PiarFlow and Flyer removed)
-            tgrass_ok, sg_sponsors, bh_result = await asyncio.gather(
-                check_tgrass_subscription(user.id) if _tg_on else _skip_bool(),
+            sg_sponsors, bh_result = await asyncio.gather(
                 get_subgram_sponsors(user.id, _sg_count) if _sg_on else _skip_list(),
                 check_botohub(user.id) if _bh_on else _skip_bh(),
             )
 
-            tgrass_url = get_tgrass_wall_url() if (_tg_on and not tgrass_ok) else None
             bh_pending = _bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
             sg_pending = _sg_on and bool(sg_sponsors)
 
-            if tgrass_url or sg_pending or bh_pending:
+            if sg_pending or bh_pending:
                 from keyboards.botohub import build_combined_wall_kb
                 wall_text = pe("📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>")
                 wall_kb = build_combined_wall_kb(
                     bh_result["tasks"] if bh_pending else [],
-                    [],
-                    [],
                     subgram_sponsors=sg_sponsors if sg_pending else [],
-                    tgrass_url=tgrass_url,
                 )
                 if isinstance(event, CallbackQuery):
                     try:
@@ -133,8 +123,8 @@ class CombinedWallMiddleware(BaseMiddleware):
                 else:
                     await event.answer(wall_text, reply_markup=wall_kb)
                 logger.info(
-                    "CombinedWall: blocked user %s (tg=%s, sg=%s, bh=%s)",
-                    user.id, bool(tgrass_url), sg_pending, bh_pending,
+                    "CombinedWall: blocked user %s (sg=%s, bh=%s)",
+                    user.id, sg_pending, bh_pending,
                 )
                 return
 

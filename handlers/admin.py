@@ -21,7 +21,7 @@ from keyboards.admin import (
     BUTTON_KEYS, button_content_list_kb, button_edit_kb,
     retention_kb, stats_tabs_kb, withdrawal_return_kb,
 )
-from keyboards.lottery import admin_lottery_kb, admin_lottery_pick_kb
+from keyboards.lottery import admin_lottery_kb, admin_lottery_pick_kb, admin_lottery_end_type_kb, admin_lottery_confirm_kb, admin_lottery_skip_kb
 from config import config
 
 router = Router()
@@ -108,6 +108,14 @@ class AdminRetentionStates(StatesGroup):
 
 class AdminDBImportStates(StatesGroup):
     waiting_file = State()
+
+
+class AdminLotteryCreateStates(StatesGroup):
+    end_value = State()
+    ticket_price = State()
+    ticket_limit = State()
+    channel = State()
+    ref_required = State()
 
 
 # ─── Guard ───────────────────────────────────────────────────────────────────
@@ -921,7 +929,7 @@ async def cb_broadcast_forward_start(callback: CallbackQuery, state: FSMContext)
     await callback.message.edit_text(
         "🔄 <b>Рассылка — пересылка</b>\n\n"
         "Перешли любое сообщение боту.\n"
-        "Все пользователи получат его копию (без пометки «Переслано»).",
+        "Все пользователи получат его с меткой «Переслано от».",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -943,7 +951,7 @@ async def msg_broadcast_forward(message: Message, state: FSMContext, session: As
     sent, failed = 0, 0
     for uid in users:
         try:
-            await bot.copy_message(chat_id=uid, from_chat_id=from_chat_id, message_id=msg_id)
+            await bot.forward_message(chat_id=uid, from_chat_id=from_chat_id, message_id=msg_id)
             sent += 1
         except Exception:
             failed += 1
@@ -1193,7 +1201,7 @@ async def cb_task_info(callback: CallbackQuery, session: AsyncSession) -> None:
         select(func.count(TaskCompletion.id)).where(TaskCompletion.task_id == task_id)
     )).scalar()
 
-    type_label = {"subscribe": "📢 Подписка на канал", "referrals": "👥 Рефералы", "linkni": "🔗 Linkni"}.get(task.task_type, task.task_type)
+    type_label = {"subscribe": "📢 Подписка на канал", "referrals": "👥 Рефералы"}.get(task.task_type, task.task_type)
     status = "✅ Активно" if task.is_active else "❌ Неактивно"
 
     extra = ""
@@ -1201,8 +1209,6 @@ async def cb_task_info(callback: CallbackQuery, session: AsyncSession) -> None:
         extra = f"\nКанал: <code>{task.channel_id}</code>"
     elif task.task_type == "referrals":
         extra = f"\nЦель: {task.target_value} рефералов"
-    elif task.task_type == "linkni":
-        extra = f"\nLinkni code: <code>{task.channel_id}</code>"
 
     await callback.message.edit_text(
         f"📌 <b>{task.title}</b>\n\n"
@@ -1306,14 +1312,6 @@ async def msg_task_reward(message: Message, state: FSMContext, session: AsyncSes
             "<b>Важно:</b> бот должен быть администратором канала для проверки подписки.",
             parse_mode="HTML",
         )
-    elif data["task_type"] == "linkni":
-        await state.set_state(AdminTaskStates.channel_id)
-        await message.answer(
-            "🔗 Введи Linkni code для задания:\n"
-            "Пример: <code>2o2i</code>\n\n"
-            "Код берётся из ссылки: <code>https://t.me/linknibot/app?startapp=x_<b>КОД</b></code>",
-            parse_mode="HTML",
-        )
     elif data["task_type"] == "referrals":
         await state.set_state(AdminTaskStates.target_value)
         await message.answer("👥 Введи необходимое количество рефералов (целое число):")
@@ -1325,12 +1323,6 @@ async def msg_task_reward(message: Message, state: FSMContext, session: AsyncSes
 async def msg_task_channel(message: Message, state: FSMContext, session: AsyncSession, bot: Bot) -> None:
     channel_id = message.text.strip()
     data = await state.get_data()
-
-    # Linkni tasks use channel_id as the Linkni code — no channel admin check needed
-    if data.get("task_type") == "linkni":
-        await state.update_data(channel_id=channel_id, reward=0.25)
-        await _save_task(message, state, session)
-        return
 
     # Verify bot is an admin of the channel before saving the task
     try:
@@ -1386,7 +1378,7 @@ async def _save_task(message: Message, state: FSMContext, session: AsyncSession)
     session.add(task)
     await session.commit()
 
-    type_label = {"subscribe": "📢 Подписка на канал", "referrals": "👥 Рефералы", "linkni": "🔗 Linkni"}.get(data["task_type"], data["task_type"])
+    type_label = {"subscribe": "📢 Подписка на канал", "referrals": "👥 Рефералы"}.get(data["task_type"], data["task_type"])
     extra = ""
     if data.get("channel_id"):
         extra = f"\nКанал: <code>{data['channel_id']}</code>"
@@ -2076,13 +2068,37 @@ async def _show_admin_lottery(callback: CallbackQuery, session: AsyncSession) ->
         select(func.count(LotteryTicket.id.distinct())).where(LotteryTicket.lottery_id == lottery.id)
     )).scalar() or 0
 
+    # End condition display
+    if lottery.end_type == "tickets":
+        end_info = f"По билетам: {int(lottery.end_value)}"
+    elif lottery.end_type == "time":
+        from datetime import timezone
+        dt = datetime.utcfromtimestamp(lottery.end_value)
+        end_info = f"По времени: {dt.strftime('%d.%m.%Y %H:%M')} UTC"
+    elif lottery.end_type == "commission":
+        end_info = f"По сборам: {lottery.end_value:.0f} ⭐"
+    else:
+        end_info = "—"
+
+    extra = []
+    if lottery.ticket_limit > 0:
+        extra.append(f"Лимит/пользователь: {lottery.ticket_limit}")
+    if lottery.ref_required > 0:
+        extra.append(f"Рефералов: {lottery.ref_required}")
+    if lottery.channel_id:
+        extra.append(f"Канал: {lottery.channel_id}")
+    extra_str = "\n".join(extra)
+
     text = (
         "🎟 <b>Лотерея (активна)</b>\n\n"
         f"🎫 Продано билетов: <b>{lottery.tickets_sold}</b>\n"
         f"👤 Участников: <b>{participants_count}</b>\n"
-        f"💰 Собрано (с комиссией): <b>{lottery.total_collected:.2f} ⭐</b>\n"
-        f"🏆 Призовой пул (70%): <b>{lottery.prize_pool:.2f} ⭐</b>\n"
-        f"💸 Комиссия бота: <b>{round(lottery.total_collected - lottery.prize_pool, 2):.2f} ⭐</b>"
+        f"💰 Собрано: <b>{lottery.total_collected:.2f} ⭐</b>\n"
+        f"🏆 Призовой пул: <b>{lottery.prize_pool:.2f} ⭐</b>\n"
+        f"💸 Комиссия: <b>{round(lottery.total_collected - lottery.prize_pool, 2):.2f} ⭐</b>\n\n"
+        f"🏷 Цена билета: <b>{lottery.ticket_price:.0f} ⭐</b>\n"
+        f"🎯 Условие завершения: <b>{end_info}</b>"
+        + (f"\n{extra_str}" if extra_str else "")
     )
     await callback.message.edit_text(
         text, parse_mode="HTML",
@@ -2099,7 +2115,7 @@ async def cb_admin_lottery(callback: CallbackQuery, session: AsyncSession) -> No
 
 
 @router.callback_query(lambda c: c.data == "admin:lottery_new")
-async def cb_admin_lottery_new(callback: CallbackQuery, session: AsyncSession) -> None:
+async def cb_admin_lottery_new(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
 
@@ -2110,9 +2126,231 @@ async def cb_admin_lottery_new(callback: CallbackQuery, session: AsyncSession) -
         await callback.answer("Активная лотерея уже существует!", show_alert=True)
         return
 
-    session.add(Lottery())
+    await state.clear()
+    await callback.message.edit_text(
+        "🎟 <b>Создание лотереи</b>\n\nВыбери условие завершения:",
+        parse_mode="HTML",
+        reply_markup=admin_lottery_end_type_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("admin:lottery_end:"))
+async def cb_admin_lottery_end_type(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    end_type = callback.data.split(":")[2]  # tickets / time / commission
+    await state.update_data(end_type=end_type)
+    await state.set_state(AdminLotteryCreateStates.end_value)
+
+    if end_type == "tickets":
+        prompt = "Введи <b>количество билетов</b> для розыгрыша (например: <b>100</b>):"
+    elif end_type == "time":
+        prompt = "Введи <b>дату и время</b> розыгрыша в формате:\n<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\nНапример: <code>31.12.2025 20:00</code> (UTC)"
+    else:
+        prompt = "Введи <b>сумму сборов</b> в ⭐ для розыгрыша (например: <b>500</b>):\n💡 Призовой пул = 70% от этой суммы"
+
+    await callback.message.edit_text(
+        f"🎟 <b>Создание лотереи</b>\n\n{prompt}",
+        parse_mode="HTML",
+        reply_markup=admin_lottery_skip_kb("admin:lottery"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "admin:lottery_skip")
+async def cb_admin_lottery_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    current = await state.get_state()
+    if current == AdminLotteryCreateStates.channel:
+        await state.update_data(channel_id=None)
+        await state.set_state(AdminLotteryCreateStates.ref_required)
+        await callback.message.edit_text(
+            "🎟 <b>Создание лотереи</b>\n\nВведи минимальное количество рефералов для участия (0 = без ограничений):",
+            parse_mode="HTML",
+            reply_markup=admin_lottery_skip_kb("admin:lottery"),
+        )
+    elif current == AdminLotteryCreateStates.ref_required:
+        await state.update_data(ref_required=0)
+        await _show_lottery_confirm(callback, state)
+    await callback.answer()
+
+
+@router.message(AdminLotteryCreateStates.end_value)
+async def msg_admin_lottery_end_value(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    fsm_data = await state.get_data()
+    end_type = fsm_data.get("end_type", "tickets")
+    raw = (message.text or "").strip()
+
+    if end_type == "time":
+        try:
+            dt = datetime.strptime(raw, "%d.%m.%Y %H:%M")
+            end_value = dt.timestamp()
+        except ValueError:
+            await message.answer("❌ Неверный формат. Используй: <b>31.12.2025 20:00</b>", parse_mode="HTML")
+            return
+    else:
+        try:
+            end_value = float(raw)
+            if end_value <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ Введи положительное число.")
+            return
+
+    await state.update_data(end_value=end_value)
+    await state.set_state(AdminLotteryCreateStates.ticket_price)
+    await message.answer(
+        "🎟 <b>Создание лотереи</b>\n\nВведи <b>цену одного билета</b> в ⭐ (например: <b>5</b>):",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminLotteryCreateStates.ticket_price)
+async def msg_admin_lottery_ticket_price(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        price = float((message.text or "").strip())
+        if price <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи положительное число.")
+        return
+
+    await state.update_data(ticket_price=price)
+    await state.set_state(AdminLotteryCreateStates.ticket_limit)
+    await message.answer(
+        "🎟 <b>Создание лотереи</b>\n\nВведи <b>лимит билетов</b> на одного пользователя (0 = без ограничений):",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminLotteryCreateStates.ticket_limit)
+async def msg_admin_lottery_ticket_limit(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        limit = int((message.text or "").strip())
+        if limit < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи целое число ≥ 0.")
+        return
+
+    await state.update_data(ticket_limit=limit)
+    await state.set_state(AdminLotteryCreateStates.channel)
+    await message.answer(
+        "🎟 <b>Создание лотереи</b>\n\nВведи <b>канал для подписки</b> (например: <code>@mychannel</code>), или нажми «Пропустить»:",
+        parse_mode="HTML",
+        reply_markup=admin_lottery_skip_kb("admin:lottery"),
+    )
+
+
+@router.message(AdminLotteryCreateStates.channel)
+async def msg_admin_lottery_channel(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    raw = (message.text or "").strip()
+    channel_id = raw if raw.startswith("@") else f"@{raw}"
+    await state.update_data(channel_id=channel_id)
+    await state.set_state(AdminLotteryCreateStates.ref_required)
+    await message.answer(
+        "🎟 <b>Создание лотереи</b>\n\nВведи минимальное количество <b>рефералов</b> для участия (0 = без ограничений):",
+        parse_mode="HTML",
+        reply_markup=admin_lottery_skip_kb("admin:lottery"),
+    )
+
+
+@router.message(AdminLotteryCreateStates.ref_required)
+async def msg_admin_lottery_ref_required(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        ref_req = int((message.text or "").strip())
+        if ref_req < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи целое число ≥ 0.")
+        return
+
+    await state.update_data(ref_required=ref_req)
+
+    class _FakeCallback:
+        def __init__(self, msg):
+            self.message = msg
+        async def answer(self, *a, **kw): pass
+
+    await _show_lottery_confirm(_FakeCallback(message), state, send_new=True)
+
+
+async def _show_lottery_confirm(callback_or_fake, state: FSMContext, send_new: bool = False) -> None:
+    fsm_data = await state.get_data()
+    end_type = fsm_data.get("end_type", "tickets")
+    end_value = fsm_data.get("end_value", 10.0)
+    ticket_price = fsm_data.get("ticket_price", 5.0)
+    ticket_limit = fsm_data.get("ticket_limit", 0)
+    channel_id = fsm_data.get("channel_id")
+    ref_required = fsm_data.get("ref_required", 0)
+
+    if end_type == "tickets":
+        end_display = f"По билетам: {int(end_value)}"
+    elif end_type == "time":
+        dt = datetime.utcfromtimestamp(end_value)
+        end_display = f"По времени: {dt.strftime('%d.%m.%Y %H:%M')} UTC"
+    else:
+        end_display = f"По сборам: {end_value:.0f} ⭐ (приз ~{end_value*0.7:.0f} ⭐)"
+
+    text = (
+        "🎟 <b>Подтверждение создания лотереи</b>\n\n"
+        f"🎯 Условие: <b>{end_display}</b>\n"
+        f"🏷 Цена билета: <b>{ticket_price:.0f} ⭐</b>\n"
+        f"🎫 Лимит/пользователь: <b>{'без ограничений' if ticket_limit == 0 else ticket_limit}</b>\n"
+        f"📢 Канал: <b>{channel_id or 'нет'}</b>\n"
+        f"👥 Рефералов: <b>{ref_required or 'нет'}</b>"
+    )
+
+    if send_new:
+        await callback_or_fake.message.answer(text, parse_mode="HTML", reply_markup=admin_lottery_confirm_kb())
+    else:
+        await callback_or_fake.message.edit_text(text, parse_mode="HTML", reply_markup=admin_lottery_confirm_kb())
+
+
+@router.callback_query(lambda c: c.data == "admin:lottery_create:confirm")
+async def cb_admin_lottery_create_confirm(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    fsm_data = await state.get_data()
+    end_type = fsm_data.get("end_type", "tickets")
+    end_value = fsm_data.get("end_value", 10.0)
+    ticket_price = fsm_data.get("ticket_price", 5.0)
+    ticket_limit = fsm_data.get("ticket_limit", 0)
+    channel_id = fsm_data.get("channel_id")
+    ref_required = fsm_data.get("ref_required", 0)
+
+    if not end_type or end_value is None:
+        await callback.answer("Ошибка данных. Начни заново.", show_alert=True)
+        await state.clear()
+        return
+
+    session.add(Lottery(
+        end_type=end_type,
+        end_value=end_value,
+        ticket_price=ticket_price,
+        ticket_limit=ticket_limit,
+        channel_id=channel_id,
+        ref_required=ref_required,
+    ))
     await session.commit()
-    await callback.answer("✅ Новая лотерея запущена!")
+    await state.clear()
+
+    await callback.answer("✅ Лотерея запущена!")
     await _show_admin_lottery(callback, session)
 
 
@@ -2135,7 +2373,7 @@ async def cb_admin_lottery_cancel(callback: CallbackQuery, session: AsyncSession
     for ticket in tickets:
         user = await session.get(User, ticket.user_id)
         if user:
-            user.stars_balance = round(user.stars_balance + 5.0, 2)
+            user.stars_balance = round(user.stars_balance + lottery.ticket_price, 2)
 
     lottery.status = "finished"
     lottery.drawn_at = datetime.utcnow()
@@ -2225,27 +2463,8 @@ async def cb_admin_lottery_winner(callback: CallbackQuery, session: AsyncSession
 
 
 async def _finish_lottery(lottery: Lottery, winner_id: int, session: AsyncSession, bot: Bot) -> None:
-    winner = await session.get(User, winner_id)
-    if winner:
-        winner.stars_balance = round(winner.stars_balance + lottery.prize_pool, 2)
-
-    lottery.status = "finished"
-    lottery.winner_id = winner_id
-    lottery.drawn_at = datetime.utcnow()
-    await session.commit()
-
-    # Notify winner
-    try:
-        if winner:
-            await bot.send_message(
-                winner_id,
-                f"🎉 <b>Поздравляем! Вы выиграли лотерею!</b>\n\n"
-                f"🏆 Ваш выигрыш: <b>{lottery.prize_pool:.2f} ⭐</b>\n"
-                f"💰 Звёзды начислены на ваш баланс!",
-                parse_mode="HTML",
-            )
-    except Exception:
-        pass
+    from handlers.lottery import finish_lottery
+    await finish_lottery(lottery, winner_id, session, bot)
 
 
 # ─── DB Export / Import ───────────────────────────────────────────────────────
@@ -2370,10 +2589,7 @@ class AdminIntegrationStates(StatesGroup):
 
 _INTEGRATION_LABELS = {
     "botohub": "BotoHub",
-    "flyer": "Flyer",
-    "piarflow": "PiarFlow",
     "subgram": "Subgram",
-    "linkni": "Linkni (Tgrass)",
     "gramads": "GramAds",
 }
 
@@ -2382,8 +2598,7 @@ async def _get_integration_statuses(session: AsyncSession) -> dict:
     statuses = {}
     for key in _INTEGRATION_LABELS:
         row = await session.get(BotSettings, f"integration_{key}_enabled")
-        # Default: BotoHub and Flyer enabled, others disabled until key is set
-        default = key in ("botohub", "flyer")
+        default = key == "botohub"
         statuses[key] = row.value == "1" if row else default
     return statuses
 
@@ -2415,7 +2630,7 @@ async def cb_integration_toggle(callback: CallbackQuery, session: AsyncSession) 
 
     db_key = f"integration_{key}_enabled"
     row = await session.get(BotSettings, db_key)
-    default = key in ("botohub", "flyer")
+    default = key == "botohub"
     current = row.value == "1" if row else default
     new_val = "0" if current else "1"
     await set_setting(session, db_key, new_val)
@@ -2506,10 +2721,7 @@ async def cb_integration_key_set(callback: CallbackQuery, state: FSMContext) -> 
     label = _INTEGRATION_LABELS.get(key, key)
     key_names = {
         "botohub": "BOTOHUB_KEY",
-        "flyer": "FLYER_KEY",
-        "piarflow": "PIARFLOW_KEY",
         "subgram": "SUBGRAM_KEY",
-        "linkni": "LINKNI_CODE",
         "gramads": "GRAMADS_TOKEN",
     }
     env_name = key_names.get(key, key.upper() + "_KEY")
@@ -2542,10 +2754,7 @@ async def msg_integration_key(message: Message, state: FSMContext, session: Asyn
     from config import config as _cfg
     key_map = {
         "botohub": "BOTOHUB_KEY",
-        "flyer": "FLYER_KEY",
-        "piarflow": "PIARFLOW_KEY",
         "subgram": "SUBGRAM_KEY",
-        "linkni": "LINKNI_CODE",
         "gramads": "GRAMADS_TOKEN",
     }
     attr = key_map.get(key)

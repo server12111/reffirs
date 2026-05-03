@@ -17,11 +17,12 @@ async def answer_with_content(
     has_photo = bool(content and content.photo_file_id)
     text = (content.text if content and content.text else None) or default_text
 
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     if has_photo:
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
         try:
             await callback.message.answer_photo(
                 photo=content.photo_file_id,
@@ -39,16 +40,9 @@ async def answer_with_content(
         return
 
     try:
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
     except Exception:
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-        try:
-            await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
-        except Exception:
-            await callback.message.answer(_strip_tgemoji(text), parse_mode="HTML", reply_markup=keyboard)
+        await callback.message.answer(_strip_tgemoji(text), parse_mode="HTML", reply_markup=keyboard)
 
 
 async def safe_edit(
@@ -57,16 +51,13 @@ async def safe_edit(
     keyboard: InlineKeyboardMarkup,
 ) -> None:
     try:
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        await callback.message.delete()
     except Exception:
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-        try:
-            await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
-        except Exception:
-            await callback.message.answer(_strip_tgemoji(text), parse_mode="HTML", reply_markup=keyboard)
+        pass
+    try:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        await callback.message.answer(_strip_tgemoji(text), parse_mode="HTML", reply_markup=keyboard)
 
 
 async def send_with_content(

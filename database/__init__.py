@@ -14,6 +14,13 @@ async def init_db() -> None:
             "ALTER TABLE tasks ADD COLUMN creator_id INTEGER",
             "ALTER TABLE tasks ADD COLUMN creator_reward_rate REAL DEFAULT 0.0",
             "ALTER TABLE tasks ADD COLUMN is_approved INTEGER DEFAULT 1",
+            "ALTER TABLE lotteries ADD COLUMN end_type TEXT DEFAULT 'tickets'",
+            "ALTER TABLE lotteries ADD COLUMN end_value REAL DEFAULT 10.0",
+            "ALTER TABLE lotteries ADD COLUMN ticket_price REAL DEFAULT 5.0",
+            "ALTER TABLE lotteries ADD COLUMN ticket_limit INTEGER DEFAULT 0",
+            "ALTER TABLE lotteries ADD COLUMN channel_id TEXT",
+            "ALTER TABLE lotteries ADD COLUMN ref_required INTEGER DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN max_completions INTEGER DEFAULT 0",
         ]:
             try:
                 await conn.execute(text(stmt))

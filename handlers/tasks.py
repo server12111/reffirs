@@ -7,18 +7,17 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from config import config
 from database.models import User, Task, TaskCompletion
 from utils.emoji import pe
 from handlers.button_helper import safe_edit
-from keyboards.main import task_single_kb, task_done_kb, back_to_menu_kb
+from keyboards.main import task_single_kb, task_done_kb, back_to_menu_kb, tasks_menu_kb
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 TASK_REWARD = 0.25
-USER_TASK_COMMISSION = 0.15  # 15% platform fee; creator pays upfront
-USER_TASK_CREATOR_RATE = 1.0 - USER_TASK_COMMISSION  # 85% to completer
+USER_TASK_COMMISSION = 0.15
+USER_TASK_CREATOR_RATE = 1.0 - USER_TASK_COMMISSION
 USER_TASK_MIN_REWARD = 1.0
 USER_TASK_MAX_REWARD = 100.0
 
@@ -26,6 +25,7 @@ USER_TASK_MAX_REWARD = 100.0
 class UserTaskCreateStates(StatesGroup):
     channel = State()
     reward = State()
+    completions = State()
     confirm = State()
 
 
@@ -56,12 +56,17 @@ async def _show_next_task(
         url = None
         if task.task_type == "subscribe" and task.channel_id:
             url = f"https://t.me/{task.channel_id.lstrip('@').lstrip('-100')}"
-        elif task.task_type == "linkni" and task.channel_id:
-            url = f"https://t.me/linknibot/app?startapp=x_{task.channel_id}_"
         kb = task_single_kb(task.task_type, str(task.id), url)
         extra = ""
         if task.task_type == "referrals" and task.target_value:
             extra = f"\n🎯 Нужно рефералов: <b>{task.target_value}</b> (у тебя: <b>{db_user.referrals_count}</b>)"
+        if task.max_completions > 0:
+            from sqlalchemy import func as _func
+            done_count = (await session.execute(
+                select(_func.count(TaskCompletion.id)).where(TaskCompletion.task_id == task.id)
+            )).scalar() or 0
+            remaining = max(0, task.max_completions - done_count)
+            extra += f"\n👥 Осталось мест: <b>{remaining}/{task.max_completions}</b>"
         display_reward = (
             round(task.reward * task.creator_reward_rate, 2)
             if task.creator_id and task.creator_reward_rate > 0
@@ -76,20 +81,30 @@ async def _show_next_task(
         await callback.answer()
         return
 
-    create_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Создать своё задание", callback_data="tasks:create", style="primary", icon_custom_emoji_id="5435970940670320222")],
+    all_done_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Создать своё задание", callback_data="tasks:create", style="primary", icon_custom_emoji_id="5435970940670320222")],
         [InlineKeyboardButton(text="Главное меню", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533")],
     ])
     await safe_edit(
         callback,
         pe("📋 <b>Задания</b>\n\nВсе задания выполнены! Заходи позже.\n\n💡 Можешь создать собственное задание за звёзды!"),
-        create_kb,
+        all_done_kb,
     )
     await callback.answer()
 
 
 @router.callback_query(lambda c: c.data == "menu:tasks")
-async def cb_tasks_menu(callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext) -> None:
+async def cb_tasks_menu(callback: CallbackQuery) -> None:
+    await safe_edit(
+        callback,
+        pe("📋 <b>Задания</b>\n\nВыбери действие:"),
+        tasks_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "tasks:do")
+async def cb_tasks_do(callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext) -> None:
     await _show_next_task(callback, session, db_user, state)
 
 
@@ -166,20 +181,6 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
             )
             return
 
-    elif task.task_type == "linkni":
-        if not task.channel_id:
-            await callback.answer("Ошибка конфигурации задания.", show_alert=True)
-            return
-        from services.linkni import check_linkni_subscription_by_code
-        done = await check_linkni_subscription_by_code(db_user.user_id, task.channel_id)
-        if not done:
-            await callback.answer(
-                "❌ Вы не выполнили задание.\nПерейдите по ссылке и нажмите «Проверить».",
-                show_alert=True,
-            )
-            return
-
-    # Determine reward (user-created tasks use their own reward amount)
     if task.creator_id and task.creator_reward_rate > 0:
         completer_reward = round(task.reward * task.creator_reward_rate, 2)
     else:
@@ -187,6 +188,15 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
 
     session.add(TaskCompletion(user_id=db_user.user_id, task_id=task_id))
     db_user.stars_balance += completer_reward
+
+    if task.max_completions > 0:
+        from sqlalchemy import func as _func
+        done_count = (await session.execute(
+            select(_func.count(TaskCompletion.id)).where(TaskCompletion.task_id == task_id)
+        )).scalar() or 0
+        if done_count + 1 >= task.max_completions:
+            task.is_active = False
+
     await session.commit()
 
     await safe_edit(
@@ -204,16 +214,9 @@ async def cb_verify_bot(callback: CallbackQuery, session: AsyncSession, db_user:
 
 # ── User-created task flow ────────────────────────────────────────────────────
 
-def _user_task_create_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Создать задание", callback_data="tasks:create", style="primary", icon_custom_emoji_id="5435970940670320222")],
-        [InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533")],
-    ])
-
-
 def _user_task_confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить и оплатить", callback_data="tasks:create:confirm", style="success", icon_custom_emoji_id="5462919317832082236")],
+        [InlineKeyboardButton(text="Подтвердить и оплатить", callback_data="tasks:create:confirm", style="success", icon_custom_emoji_id="5462919317832082236")],
         [InlineKeyboardButton(text="Отмена", callback_data="tasks:create:cancel", style="danger", icon_custom_emoji_id="5318991467639756533")],
     ])
 
@@ -221,13 +224,14 @@ def _user_task_confirm_kb() -> InlineKeyboardMarkup:
 @router.callback_query(lambda c: c.data == "tasks:create")
 async def cb_task_create_start(callback: CallbackQuery, state: FSMContext, db_user: User) -> None:
     await state.set_state(UserTaskCreateStates.channel)
-    await callback.message.answer(
+    await safe_edit(
+        callback,
         pe(
             "📝 <b>Создать задание</b>\n\n"
             "Отправь ссылку на Telegram-канал, на который должны подписаться пользователи.\n\n"
             "Пример: <code>@mychannel</code> или <code>https://t.me/mychannel</code>"
         ),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Отмена", callback_data="tasks:create:cancel", style="danger", icon_custom_emoji_id="5318991467639756533")]
         ]),
     )
@@ -237,7 +241,6 @@ async def cb_task_create_start(callback: CallbackQuery, state: FSMContext, db_us
 @router.message(UserTaskCreateStates.channel)
 async def msg_task_create_channel(message: Message, state: FSMContext) -> None:
     raw = (message.text or "").strip()
-    # Normalize: accept @username or t.me/username or https://t.me/username
     if raw.startswith("https://t.me/"):
         channel_id = "@" + raw[len("https://t.me/"):]
     elif raw.startswith("t.me/"):
@@ -260,11 +263,11 @@ async def msg_task_create_channel(message: Message, state: FSMContext) -> None:
 
 
 @router.message(UserTaskCreateStates.reward)
-async def msg_task_create_reward(message: Message, state: FSMContext, db_user: User) -> None:
+async def msg_task_create_reward(message: Message, state: FSMContext) -> None:
     try:
         reward = float((message.text or "").strip().replace(",", "."))
     except ValueError:
-        await message.answer("❌ Введи число, например: <b>5</b>")
+        await message.answer("❌ Введи число, например: <b>5</b>", parse_mode="HTML")
         return
 
     if reward < USER_TASK_MIN_REWARD or reward > USER_TASK_MAX_REWARD:
@@ -273,31 +276,53 @@ async def msg_task_create_reward(message: Message, state: FSMContext, db_user: U
         )
         return
 
-    total_cost = round(reward * (1 + USER_TASK_COMMISSION), 2)
+    await state.update_data(reward=reward)
+    await state.set_state(UserTaskCreateStates.completions)
+    await message.answer(
+        pe(
+            f"✅ Награда: <b>{reward:.0f} ⭐</b> за выполнение.\n\n"
+            f"Укажи <b>сколько раз</b> можно выполнить это задание.\n"
+            f"Например: <b>10</b> — задание выполнят 10 пользователей, затем деактивируется.\n\n"
+            f"💡 Итоговая стоимость = награда × кол-во × 1.15 (комиссия 15%)"
+        ),
+    )
+
+
+@router.message(UserTaskCreateStates.completions)
+async def msg_task_create_completions(message: Message, state: FSMContext, db_user: User) -> None:
+    try:
+        completions = int((message.text or "").strip())
+        if completions < 1:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи целое число, минимум <b>1</b>.", parse_mode="HTML")
+        return
+
+    fsm_data = await state.get_data()
+    reward = fsm_data["reward"]
+    channel_id = fsm_data["channel_id"]
+    total_cost = round(reward * completions * (1 + USER_TASK_COMMISSION), 2)
+
     if db_user.stars_balance < total_cost:
         await message.answer(
             pe(
                 f"❌ Недостаточно звёзд.\n"
-                f"Нужно: <b>{total_cost:.2f} ⭐</b> (награда {reward:.0f} + комиссия {USER_TASK_COMMISSION*100:.0f}%)\n"
+                f"Нужно: <b>{total_cost:.2f} ⭐</b> ({reward:.0f} × {completions} + комиссия 15%)\n"
                 f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>"
             )
         )
         return
 
-    fsm_data = await state.get_data()
-    channel_id = fsm_data["channel_id"]
-    await state.update_data(reward=reward, total_cost=total_cost)
+    await state.update_data(completions=completions, total_cost=total_cost)
     await state.set_state(UserTaskCreateStates.confirm)
-
     await message.answer(
         pe(
             f"📋 <b>Подтверждение задания</b>\n\n"
             f"Канал: <code>{channel_id}</code>\n"
             f"Награда за выполнение: <b>{reward:.0f} ⭐</b>\n"
-            f"Из них тебе (85%): остаётся у тебя\n"
-            f"Комиссия платформы (15%): <b>{total_cost - reward:.2f} ⭐</b>\n"
-            f"Итого к списанию: <b>{total_cost:.2f} ⭐</b>\n\n"
-            f"Задание будет активировано после проверки администратором."
+            f"Количество выполнений: <b>{completions}</b>\n"
+            f"Комиссия платформы (15%): <b>{round(total_cost - reward * completions, 2):.2f} ⭐</b>\n"
+            f"Итого к списанию: <b>{total_cost:.2f} ⭐</b>"
         ),
         reply_markup=_user_task_confirm_kb(),
     )
@@ -310,7 +335,8 @@ async def cb_task_create_confirm(callback: CallbackQuery, state: FSMContext, ses
     reward = fsm_data.get("reward")
     total_cost = fsm_data.get("total_cost")
 
-    if not channel_id or not reward or not total_cost:
+    completions = fsm_data.get("completions")
+    if not channel_id or not reward or not total_cost or not completions:
         await callback.answer("Ошибка данных. Начни заново.", show_alert=True)
         await state.clear()
         return
@@ -323,7 +349,6 @@ async def cb_task_create_confirm(callback: CallbackQuery, state: FSMContext, ses
         await state.clear()
         return
 
-    # Deduct cost and create task
     db_user.stars_balance -= total_cost
     task = Task(
         task_type="subscribe",
@@ -332,50 +357,34 @@ async def cb_task_create_confirm(callback: CallbackQuery, state: FSMContext, ses
         reward=reward,
         channel_id=channel_id,
         is_active=True,
-        is_approved=False,
+        is_approved=True,
         creator_id=db_user.user_id,
         creator_reward_rate=USER_TASK_CREATOR_RATE,
+        max_completions=completions,
     )
     session.add(task)
     await session.flush()
     await session.commit()
     await state.clear()
 
-    # Notify admins
-    for admin_id in config.ADMIN_IDS:
-        try:
-            await callback.bot.send_message(
-                admin_id,
-                pe(
-                    f"📋 <b>Новое задание на проверку #{task.id}</b>\n\n"
-                    f"👤 @{db_user.username or db_user.first_name} | ID {db_user.user_id}\n"
-                    f"🔗 Канал: <code>{channel_id}</code>\n"
-                    f"💰 Награда: <b>{reward:.0f} ⭐</b>"
-                ),
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="✅ Одобрить", callback_data=f"admin:task_approve:{task.id}", style="success", icon_custom_emoji_id="5462919317832082236"),
-                        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin:task_reject:{task.id}", style="danger", icon_custom_emoji_id="5210952531676504517"),
-                    ]
-                ]),
-            )
-        except Exception:
-            pass
-
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         pe(
-            f"✅ <b>Задание #{task.id} отправлено на проверку!</b>\n\n"
+            f"✅ <b>Задание #{task.id} создано!</b>\n\n"
+            f"Канал: <code>{channel_id}</code>\n"
+            f"Награда: <b>{reward:.0f} ⭐</b> за выполнение\n"
+            f"Выполнений: <b>{completions}</b>\n"
             f"Списано: <b>{total_cost:.2f} ⭐</b>\n"
             f"Баланс: <b>{db_user.stars_balance:.2f} ⭐</b>\n\n"
-            f"Задание будет активировано после одобрения администратором."
+            f"Задание сразу активировано и доступно другим пользователям."
         ),
-        reply_markup=back_to_menu_kb(),
+        back_to_menu_kb(),
     )
-    await callback.answer("✅ Отправлено!")
+    await callback.answer("✅ Задание создано!")
 
 
 @router.callback_query(lambda c: c.data == "tasks:create:cancel")
 async def cb_task_create_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("❌ Создание задания отменено.", reply_markup=back_to_menu_kb())
+    await safe_edit(callback, "❌ Создание задания отменено.", back_to_menu_kb())
     await callback.answer()

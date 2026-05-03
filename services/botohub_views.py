@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 BOTOHUB_VIEWS_URL = "https://views.botohub.me/ad/SendPost"
 
 
-async def show_botohub_views(user_id: int, hi: bool = False) -> None:
+async def show_botohub_views(user_id: int, hi: bool = False) -> bool:
     """
     Send a BotoHub Views advertisement to the user.
     Called after the user passes all subscription walls.
@@ -20,7 +20,7 @@ async def show_botohub_views(user_id: int, hi: bool = False) -> None:
     Silent on any error — ads are non-critical.
     """
     if not config.BOTOHUB_VIEWS_KEY:
-        return
+        return False
 
     try:
         payload: dict = {"SendToChatId": user_id}
@@ -41,6 +41,7 @@ async def show_botohub_views(user_id: int, hi: bool = False) -> None:
                 result = data.get("SendPostResult") if isinstance(data, dict) else None
                 if result == 1:
                     logger.debug("BotoHubViews: ad sent to user %s", user_id)
+                    return True
                 elif result == 2:
                     logger.error("BotoHubViews: revoked token")
                 elif result == 3:
@@ -52,3 +53,4 @@ async def show_botohub_views(user_id: int, hi: bool = False) -> None:
 
     except Exception as exc:
         logger.warning("BotoHubViews: error for user %s: %s", user_id, exc)
+    return False

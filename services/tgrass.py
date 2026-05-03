@@ -6,62 +6,82 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-TGRASS_API_URL = "https://go.linkni.me/api/subscriptions"
+TGRASS_URL = "https://tgrass.space/offers"
+TGRASS_RESET_URL = "https://tgrass.space/reset_offers"
 
 
-def get_tgrass_wall_url() -> str | None:
+async def get_tgrass_offers(user_id: int, user=None) -> list[dict]:
     """
-    Returns the Tgrass mini-app URL for the subscription wall.
-    Format: https://t.me/linknibot/app?startapp=x_{code}
-    Returns None if TGRASS_CODE is not configured.
-    """
-    if not config.LINKNI_CODE:
-        return None
-    return f"https://t.me/linknibot/app?startapp=x_{config.LINKNI_CODE}"
+    Fetch unsubscribed TGrass offers for the user.
 
-
-async def check_tgrass_subscription(user_id: int) -> bool:
+    Returns list of offer dicts: [{"name": str, "link": str, "type": str, "offer_id": int}, ...]
+    Returns [] if user passed all offers, no offers available, key not set, or on error.
     """
-    Check whether the user has subscribed via Tgrass.
+    if not config.TGRASS_CODE:
+        return []
 
-    Returns True if subscribed or TGRASS_CODE not set.
-    Returns False if not subscribed yet.
-    On any API error — returns True (allow access, don't block on network failure).
-    """
-    if not config.LINKNI_CODE:
-        return True
+    payload: dict = {
+        "tg_user_id": user_id,
+        "is_premium": bool(getattr(user, "is_premium", False)),
+        "lang": getattr(user, "language_code", "ru") or "ru",
+    }
+    login = getattr(user, "username", None)
+    if login:
+        payload["tg_login"] = login
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                TGRASS_API_URL,
-                params={"code": config.LINKNI_CODE, "user_id": user_id},
+            async with session.post(
+                TGRASS_URL,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Auth": config.TGRASS_CODE,
+                },
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status != 200:
-                    logger.error("Tgrass: HTTP %s for user %s", resp.status, user_id)
-                    return True
+                    logger.error("TGrass: HTTP %s for user %s", resp.status, user_id)
+                    return []
 
                 data = await resp.json()
-                logger.debug("Tgrass response for user %s: %s", user_id, data)
+                status = data.get("status")
+                logger.debug("TGrass: status=%s for user %s", status, user_id)
 
-                if not isinstance(data, list):
-                    return True
+                if status in ("ok", "no_offers"):
+                    return []  # user passed or nothing to show
 
-                # If there's at least one "subscribed" entry — user completed the wall
-                for entry in data:
-                    if entry.get("status") == "subscribed":
-                        return True
+                if status == "not_ok":
+                    offers = data.get("offers", [])
+                    return [o for o in offers if not o.get("subscribed", False)]
 
-                # No subscribed entry found
-                return False
+                return []
 
     except aiohttp.ClientConnectorError as exc:
-        logger.warning("Tgrass: Connection error for user %s: %s", user_id, exc)
-        return True
+        logger.warning("TGrass: Connection error for user %s: %s", user_id, exc)
+        return []
     except aiohttp.ServerTimeoutError:
-        logger.warning("Tgrass: Timeout for user %s", user_id)
-        return True
+        logger.warning("TGrass: Timeout for user %s", user_id)
+        return []
     except Exception as exc:
-        logger.warning("Tgrass: Unexpected error for user %s: %s", user_id, exc)
-        return True
+        logger.warning("TGrass: Unexpected error for user %s: %s", user_id, exc)
+        return []
+
+
+async def reset_tgrass_offers(user_id: int) -> None:
+    """Reset offer refresh timer so user gets fresh offers on next call."""
+    if not config.TGRASS_CODE:
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(
+                TGRASS_RESET_URL,
+                json={"tg_user_id": user_id},
+                headers={
+                    "Content-Type": "application/json",
+                    "Auth": config.TGRASS_CODE,
+                },
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+    except Exception:
+        pass
