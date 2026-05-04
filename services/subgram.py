@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 SUBGRAM_URL = "https://api.subgram.org"
 
 
-async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5) -> list[dict]:
+async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5, user=None) -> list[dict]:
     """
     Fetch unsubscribed Subgram sponsors for the user.
 
@@ -31,6 +31,11 @@ async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5) -> list[dict
         "max_sponsors": max(1, min(max_sponsors, 10)),
         "get_links": 1,
     }
+    if user:
+        payload["first_name"] = getattr(user, "first_name", "") or ""
+        payload["username"] = getattr(user, "username", "") or ""
+        payload["language_code"] = getattr(user, "language_code", "ru") or "ru"
+        payload["is_premium"] = bool(getattr(user, "is_premium", False))
 
     try:
         async with aiohttp.ClientSession() as session:

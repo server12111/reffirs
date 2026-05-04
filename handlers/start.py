@@ -102,7 +102,7 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         async def _skip_list(): return []
 
         sg_sponsors, bh_result = await asyncio.gather(
-            get_subgram_sponsors(user_id, sg_count) if sg_on else _skip_list(),
+            get_subgram_sponsors(user_id, sg_count, user=message.from_user) if sg_on else _skip_list(),
             check_botohub(user_id) if bh_on else _skip_bh(),
         )
 

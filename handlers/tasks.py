@@ -24,6 +24,7 @@ USER_TASK_MAX_REWARD = 100.0
 
 class UserTaskCreateStates(StatesGroup):
     channel = State()
+    admin_confirm = State()
     reward = State()
     completions = State()
     confirm = State()
@@ -238,8 +239,17 @@ async def cb_task_create_start(callback: CallbackQuery, state: FSMContext, db_us
     await callback.answer()
 
 
+def _reward_prompt(channel_id: str) -> str:
+    return pe(
+        f"✅ Канал: <code>{channel_id}</code>\n\n"
+        f"Укажи награду за выполнение задания (в ⭐).\n"
+        f"Мин: <b>{USER_TASK_MIN_REWARD:.0f}</b>, Макс: <b>{USER_TASK_MAX_REWARD:.0f}</b>\n\n"
+        f"💡 С тебя будет списано reward × 1.15 (15% комиссия платформы)."
+    )
+
+
 @router.message(UserTaskCreateStates.channel)
-async def msg_task_create_channel(message: Message, state: FSMContext) -> None:
+async def msg_task_create_channel(message: Message, state: FSMContext, bot: Bot) -> None:
     raw = (message.text or "").strip()
     if raw.startswith("https://t.me/"):
         channel_id = "@" + raw[len("https://t.me/"):]
@@ -251,15 +261,54 @@ async def msg_task_create_channel(message: Message, state: FSMContext) -> None:
         channel_id = "@" + raw
 
     await state.update_data(channel_id=channel_id)
-    await state.set_state(UserTaskCreateStates.reward)
+
+    # Check if bot is already admin in this channel
+    try:
+        me = await bot.get_me()
+        member = await bot.get_chat_member(channel_id, me.id)
+        if member.status in ("administrator", "creator"):
+            await state.set_state(UserTaskCreateStates.reward)
+            await message.answer(_reward_prompt(channel_id))
+            return
+    except Exception:
+        me = await bot.get_me()
+
+    # Bot is not admin — ask user to add it
+    await state.set_state(UserTaskCreateStates.admin_confirm)
     await message.answer(
         pe(
             f"✅ Канал: <code>{channel_id}</code>\n\n"
-            f"Укажи награду за выполнение задания (в ⭐).\n"
-            f"Мин: <b>{USER_TASK_MIN_REWARD:.0f}</b>, Макс: <b>{USER_TASK_MAX_REWARD:.0f}</b>\n\n"
-            f"💡 С тебя будет списано reward × 1.15 (15% комиссия платформы)."
+            f"⚠️ <b>Потрібно додати бота як адміна</b>\n\n"
+            f"Щоб бот міг перевіряти підписки, додай <b>@{me.username}</b> як адміністратора каналу.\n\n"
+            f"Після цього натисни «Я додав ✅»"
         ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Я додав ✅", callback_data="tasks:admin_added", style="success", icon_custom_emoji_id="5462919317832082236")],
+            [InlineKeyboardButton(text="Відмінити", callback_data="tasks:create:cancel", style="danger", icon_custom_emoji_id="5318991467639756533")],
+        ]),
     )
+
+
+@router.callback_query(lambda c: c.data == "tasks:admin_added")
+async def cb_task_admin_added(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    fsm_data = await state.get_data()
+    channel_id = fsm_data.get("channel_id")
+    if not channel_id:
+        await callback.answer("Помилка сесії. Почни заново.", show_alert=True)
+        await state.clear()
+        return
+    try:
+        me = await bot.get_me()
+        member = await bot.get_chat_member(channel_id, me.id)
+        if member.status not in ("administrator", "creator"):
+            await callback.answer("❌ Бот ще не адмін. Додай і спробуй знову.", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("❌ Не вдалося перевірити. Перевір username каналу.", show_alert=True)
+        return
+    await state.set_state(UserTaskCreateStates.reward)
+    await safe_edit(callback, _reward_prompt(channel_id), None)
+    await callback.answer("✅ Бот доданий як адмін!")
 
 
 @router.message(UserTaskCreateStates.reward)

@@ -100,7 +100,7 @@ class CombinedWallMiddleware(BaseMiddleware):
                 return []
 
             sg_sponsors, bh_result = await asyncio.gather(
-                get_subgram_sponsors(user.id, _sg_count) if _sg_on else _skip_list(),
+                get_subgram_sponsors(user.id, _sg_count, user=user) if _sg_on else _skip_list(),
                 check_botohub(user.id) if _bh_on else _skip_bh(),
             )
 
