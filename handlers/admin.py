@@ -2549,7 +2549,7 @@ async def msg_admin_db_import_file(message: Message, session: AsyncSession, stat
         file_io.seek(0)
         data = json.loads(file_io.read().decode("utf-8"))
     except Exception as e:
-        await message.answer(f"❌ Помилка читання файлу:\n<code>{e}</code>", parse_mode="HTML")
+        await message.answer(f"❌ Ошибка чтения файла:\n<code>{e}</code>", parse_mode="HTML")
         return
 
     try:
@@ -2571,10 +2571,10 @@ async def msg_admin_db_import_file(message: Message, session: AsyncSession, stat
                 session.add(model(**converted))
 
         await session.commit()
-        await message.answer("✅ <b>Імпорт успішний!</b>\nБаза даних відновлена.", parse_mode="HTML")
+        await message.answer("✅ <b>Импорт успешен!</b>\nБаза данных восстановлена.", parse_mode="HTML")
     except Exception as e:
         await session.rollback()
-        await message.answer(f"❌ Помилка імпорту:\n<code>{e}</code>", parse_mode="HTML")
+        await message.answer(f"❌ Ошибка импорта:\n<code>{e}</code>", parse_mode="HTML")
 
 
 # ─── Integrations management ─────────────────────────────────────────────────
@@ -2610,10 +2610,10 @@ async def cb_integrations(callback: CallbackQuery, session: AsyncSession) -> Non
 
     statuses = await _get_integration_statuses(session)
     text = (
-        "🔌 <b>Управління інтеграціями</b>\n\n"
-        "Натисніть на інтеграцію щоб увімкнути/вимкнути.\n"
-        "«📊 Кількість спонсорів» — налаштувати скільки каналів показувати від кожної інтеграції.\n"
-        "«🔑 API ключі» — вказати ключі для нових інтеграцій."
+        "🔌 <b>Управление интеграциями</b>\n\n"
+        "Нажмите на интеграцию, чтобы включить/отключить.\n"
+        "«📊 Количество спонсоров» — настроить сколько каналов показывать от каждой интеграции.\n"
+        "«🔑 API ключи» — указать ключи для новых интеграций."
     )
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=integrations_kb(statuses))
     await callback.answer()
@@ -2626,7 +2626,7 @@ async def cb_integration_toggle(callback: CallbackQuery, session: AsyncSession) 
 
     key = callback.data.split(":")[2]
     if key not in _INTEGRATION_LABELS:
-        return await callback.answer("Невідома інтеграція.", show_alert=True)
+        return await callback.answer("Неизвестная интеграция.", show_alert=True)
 
     db_key = f"integration_{key}_enabled"
     row = await session.get(BotSettings, db_key)
@@ -2647,8 +2647,8 @@ async def cb_integration_counts(callback: CallbackQuery) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
     await callback.message.edit_text(
-        "📊 <b>Кількість спонсорів</b>\n\n"
-        "Оберіть інтеграцію для зміни кількості каналів (1–10):",
+        "📊 <b>Количество спонсоров</b>\n\n"
+        "Выберите интеграцию для изменения количества каналов (1–10):",
         parse_mode="HTML",
         reply_markup=integration_counts_kb(),
     )
@@ -2670,8 +2670,8 @@ async def cb_integration_count_set(callback: CallbackQuery, state: FSMContext, s
     await state.update_data(count_key=db_key)
     await callback.message.edit_text(
         f"📊 <b>{label} — кількість спонсорів</b>\n\n"
-        f"Поточне значення: <b>{current}</b>\n"
-        f"Введи нове значення (1–10):",
+        f"Текущее значение: <b>{current}</b>\n"
+        f"Введи новое значение (1–10):",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2684,7 +2684,7 @@ async def msg_integration_count(message: Message, state: FSMContext, session: As
         if not 1 <= val <= 10:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введи ціле число від 1 до 10:")
+        await message.answer("❌ Введи целое число от 1 до 10:")
         return
 
     data = await state.get_data()
@@ -2693,7 +2693,7 @@ async def msg_integration_count(message: Message, state: FSMContext, session: As
     await set_setting(session, db_key, str(val))
     await session.commit()
     await message.answer(
-        f"✅ Кількість спонсорів встановлено: <b>{val}</b>",
+        f"✅ Количество спонсоров установлено: <b>{val}</b>",
         parse_mode="HTML",
         reply_markup=admin_main_kb(),
     )
@@ -2704,8 +2704,8 @@ async def cb_integration_keys(callback: CallbackQuery) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
     await callback.message.edit_text(
-        "🔑 <b>API ключі інтеграцій</b>\n\n"
-        "Оберіть інтеграцію для введення ключа:",
+        "🔑 <b>API ключи интеграций</b>\n\n"
+        "Выберите интеграцию для ввода ключа:",
         parse_mode="HTML",
         reply_markup=integration_keys_kb(),
     )
@@ -2730,8 +2730,8 @@ async def cb_integration_key_set(callback: CallbackQuery, state: FSMContext) -> 
     await state.update_data(integration_key=key, env_name=env_name)
     await callback.message.edit_text(
         f"🔑 <b>{label}</b>\n\n"
-        f"Введи значення для <code>{env_name}</code>:\n"
-        f"(Ключ збережеться в базі даних і буде використовуватись до перезапуску бота)",
+        f"Введи значение для <code>{env_name}</code>:\n"
+        f"(Ключ сохранится в базе данных и будет использоваться до перезапуска бота)",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2762,7 +2762,7 @@ async def msg_integration_key(message: Message, state: FSMContext, session: Asyn
         setattr(_cfg, attr, value)
 
     await message.answer(
-        f"✅ Ключ <code>{env_name}</code> збережено!\n"
+        f"✅ Ключ <code>{env_name}</code> сохранён!\n"
         f"Значення: <code>{value[:20]}{'...' if len(value) > 20 else ''}</code>",
         parse_mode="HTML",
         reply_markup=admin_main_kb(),

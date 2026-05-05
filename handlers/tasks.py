@@ -278,13 +278,13 @@ async def msg_task_create_channel(message: Message, state: FSMContext, bot: Bot)
     await message.answer(
         pe(
             f"✅ Канал: <code>{channel_id}</code>\n\n"
-            f"⚠️ <b>Потрібно додати бота як адміна</b>\n\n"
-            f"Щоб бот міг перевіряти підписки, додай <b>@{me.username}</b> як адміністратора каналу.\n\n"
-            f"Після цього натисни «Я додав ✅»"
+            f"⚠️ <b>Нужно добавить бота как администратора</b>\n\n"
+            f"Чтобы бот мог проверять подписки, добавь <b>@{me.username}</b> как администратора канала.\n\n"
+            f"После этого нажми «Я добавил ✅»"
         ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Я додав ✅", callback_data="tasks:admin_added", style="success", icon_custom_emoji_id="5462919317832082236")],
-            [InlineKeyboardButton(text="Відмінити", callback_data="tasks:create:cancel", style="danger", icon_custom_emoji_id="5318991467639756533")],
+            [InlineKeyboardButton(text="Я добавил ✅", callback_data="tasks:admin_added", style="success", icon_custom_emoji_id="5462919317832082236")],
+            [InlineKeyboardButton(text="Отмена", callback_data="tasks:create:cancel", style="danger", icon_custom_emoji_id="5318991467639756533")],
         ]),
     )
 
@@ -294,17 +294,17 @@ async def cb_task_admin_added(callback: CallbackQuery, state: FSMContext, bot: B
     fsm_data = await state.get_data()
     channel_id = fsm_data.get("channel_id")
     if not channel_id:
-        await callback.answer("Помилка сесії. Почни заново.", show_alert=True)
+        await callback.answer("Ошибка сессии. Начни заново.", show_alert=True)
         await state.clear()
         return
     try:
         me = await bot.get_me()
         member = await bot.get_chat_member(channel_id, me.id)
         if member.status not in ("administrator", "creator"):
-            await callback.answer("❌ Бот ще не адмін. Додай і спробуй знову.", show_alert=True)
+            await callback.answer("❌ Бот ещё не администратор. Добавь и попробуй снова.", show_alert=True)
             return
     except Exception:
-        await callback.answer("❌ Не вдалося перевірити. Перевір username каналу.", show_alert=True)
+        await callback.answer("❌ Не удалось проверить. Проверь username канала.", show_alert=True)
         return
     await state.set_state(UserTaskCreateStates.reward)
     await safe_edit(callback, _reward_prompt(channel_id), None)

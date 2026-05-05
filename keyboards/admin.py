@@ -287,8 +287,8 @@ def integrations_kb(statuses: dict) -> InlineKeyboardMarkup:
     _row("Subgram", "subgram")
     _row("GramAds (реклама)", "gramads")
 
-    builder.row(InlineKeyboardButton(text="📊 Кількість спонсорів", callback_data="integration:counts"))
-    builder.row(InlineKeyboardButton(text="🔑 API ключі", callback_data="integration:keys"))
+    builder.row(InlineKeyboardButton(text="📊 Количество спонсоров", callback_data="integration:counts"))
+    builder.row(InlineKeyboardButton(text="🔑 API ключи", callback_data="integration:keys"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin:main"))
     return builder.as_markup()
 
