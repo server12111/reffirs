@@ -11,7 +11,7 @@ from handlers.button_helper import answer_with_content, send_with_content
 from keyboards.botohub import build_combined_wall_kb
 from keyboards.main import main_menu_kb
 from config import config
-from services.referral import grant_referral_reward_if_pending, notify_referrer_joined
+from services.referral import grant_referral_reward_if_pending, notify_referrer_joined, cancel_referral_no_sponsors
 from services.subgram import get_subgram_sponsors
 from services.botohub_views import show_botohub_views
 from utils.botohub_api import check_botohub
@@ -120,8 +120,8 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
             )
             return
 
-    # User passed subscription wall — give referral reward + show ads
-    await grant_referral_reward_if_pending(user, session, message.bot)
+    # No sponsors shown — cancel pending reward and notify referrer
+    await cancel_referral_no_sponsors(user, session, message.bot)
     ad_sent = await show_botohub_views(message.from_user.id, hi=True)
     if ad_sent:
         await asyncio.sleep(0.5)

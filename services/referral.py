@@ -41,6 +41,32 @@ async def notify_referrer_joined(
         pass
 
 
+async def cancel_referral_no_sponsors(
+    user: User, session: AsyncSession, bot: Bot
+) -> None:
+    """Called when new user sees no sponsors at /start.
+    Cancels the pending reward and notifies the referrer."""
+    if not user.referral_reward_pending or not user.referrer_id:
+        return
+
+    referrer = await session.get(User, user.referrer_id)
+    user.referral_reward_pending = False
+    await session.commit()
+
+    if referrer:
+        name = f"@{user.username}" if user.username else user.first_name
+        try:
+            await bot.send_message(
+                user.referrer_id,
+                f'<tg-emoji emoji-id="5258203794772085854">⚡️</tg-emoji> '
+                f'Користувач {name} зареєструвався по твоїй ссилці, але нагорода не нарахована — '
+                f'на момент реєстрації не було активних спонсорів для підписки.',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+
 async def grant_referral_reward_if_pending(
     user: User, session: AsyncSession, bot: Bot
 ) -> None:
