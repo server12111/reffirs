@@ -51,18 +51,28 @@ async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5, user=None) -
                     return []
 
                 data = await resp.json()
-                if data.get("status") != "ok":
-                    logger.warning("Subgram get-sponsors error for user %s: %s", user_id, data)
+                status = data.get("status")
+                code = data.get("code", 0)
+
+                # "warning" + code 200 = user has unsubscribed sponsors (in additional.sponsors)
+                # "ok" = sponsors in result[]
+                if status == "warning" and code == 200:
+                    items = data.get("additional", {}).get("sponsors", [])
+                elif status == "ok":
+                    items = data.get("result", [])
+                else:
+                    logger.warning("Subgram get-sponsors skip for user %s: %s", user_id, data.get("message", status))
                     return []
 
-                result = data.get("result", [])
-                if not isinstance(result, list):
+                if not isinstance(items, list):
                     return []
 
                 sponsors = []
-                for item in result:
+                for item in items:
                     link = item.get("link", "")
                     if not link:
+                        continue
+                    if item.get("available_now") is False:
                         continue
                     sponsors.append({
                         "link": link,
