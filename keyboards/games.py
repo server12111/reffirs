@@ -35,6 +35,10 @@ def games_menu_kb(configs: dict) -> InlineKeyboardMarkup:
             ))
     builder.row(InlineKeyboardButton(text="Лотерея", callback_data="game:lottery", style="primary", icon_custom_emoji_id="5431653802753159903"))
     builder.row(InlineKeyboardButton(text="Дуэль", callback_data="duel:menu", style="primary", icon_custom_emoji_id="5453991094435997597"))
+    builder.row(
+        InlineKeyboardButton(text="🎡 Все или ничего", callback_data="menu:wheel", style="primary", icon_custom_emoji_id="5361993818373655559"),
+        InlineKeyboardButton(text="🎁 Кейсы", callback_data="menu:cases", style="primary", icon_custom_emoji_id="5427225953463972959"),
+    )
     builder.row(InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
     return builder.as_markup()
 

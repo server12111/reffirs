@@ -46,8 +46,13 @@ async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5, user=None) -
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status != 200:
-                    body = await resp.text()
-                    logger.error("Subgram get-sponsors: HTTP %s for user %s | body: %s", resp.status, user_id, body[:300])
+                    # 404 + {"status":"ok"} = no suitable advertisers (normal state)
+                    # any other non-200 = real error
+                    if resp.status == 404:
+                        logger.debug("Subgram: no sponsors for user %s (404/no advertisers)", user_id)
+                    else:
+                        body = await resp.text()
+                        logger.error("Subgram get-sponsors: HTTP %s for user %s | body: %s", resp.status, user_id, body[:300])
                     return []
 
                 data = await resp.json()

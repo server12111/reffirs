@@ -5,4 +5,4 @@ __pycache__/
 *.db
 *.sqlite
 .DS_Store
-bot_output.log
+*.log

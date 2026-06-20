@@ -171,3 +171,12 @@ class LotteryTicket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SponsorEvent(Base):
+    __tablename__ = "sponsor_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    service: Mapped[str] = mapped_column(String(16))   # "subgram", "tgrass", "botohub"
+    event_type: Mapped[str] = mapped_column(String(8)) # "show", "pass"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+

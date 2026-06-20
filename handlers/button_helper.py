@@ -50,6 +50,13 @@ async def safe_edit(
     text: str,
     keyboard: InlineKeyboardMarkup,
 ) -> None:
+    # Try edit_text first (no flicker, no duplicate message)
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        return
+    except Exception:
+        pass
+    # Fall back: delete old message and send new one (needed after video/photo messages)
     try:
         await callback.message.delete()
     except Exception:

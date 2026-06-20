@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from datetime import date as _date
 
-from database.models import User, PromoCode, PromoUse, Withdrawal, BotSettings, Task, TaskCompletion, GameSession, ButtonContent, Transfer, Duel, Lottery, LotteryTicket
+from database.models import User, PromoCode, PromoUse, Withdrawal, BotSettings, Task, TaskCompletion, GameSession, ButtonContent, Transfer, Duel, Lottery, LotteryTicket, SponsorEvent
 from handlers.withdraw import build_withdrawal_msg
 from database.engine import set_setting, get_button_content, set_button_photo, set_button_text
 from keyboards.admin import (
@@ -20,6 +20,9 @@ from keyboards.admin import (
     games_list_kb, game_detail_kb,
     BUTTON_KEYS, button_content_list_kb, button_edit_kb,
     retention_kb, stats_tabs_kb, withdrawal_return_kb,
+    admin_users_kb, admin_database_kb,
+    admin_casino_kb, admin_wheel_videos_kb, admin_cases_videos_kb, admin_case_prizes_kb,
+    casino_back_kb, prize_to_key, _CASE_PRIZES_LIST, _TIER_ICONS,
 )
 from keyboards.lottery import admin_lottery_kb, admin_lottery_pick_kb, admin_lottery_end_type_kb, admin_lottery_confirm_kb, admin_lottery_skip_kb
 from config import config
@@ -110,6 +113,10 @@ class AdminDBImportStates(StatesGroup):
     waiting_file = State()
 
 
+class AdminCasinoStates(StatesGroup):
+    upload_video = State()
+
+
 class AdminLotteryCreateStates(StatesGroup):
     end_value = State()
     ticket_price = State()
@@ -138,6 +145,30 @@ async def cb_admin_main(callback: CallbackQuery) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
     await callback.message.edit_text("🛠 <b>Админ-панель</b>", parse_mode="HTML", reply_markup=admin_main_kb())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "admin:users")
+async def cb_admin_users(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    await callback.message.edit_text(
+        "💳 <b>Пользователи</b>\n\nВыбери действие:",
+        parse_mode="HTML",
+        reply_markup=admin_users_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "admin:database")
+async def cb_admin_database(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    await callback.message.edit_text(
+        "🗄 <b>База данных</b>\n\nВыбери действие:",
+        parse_mode="HTML",
+        reply_markup=admin_database_kb(),
+    )
     await callback.answer()
 
 
@@ -379,6 +410,70 @@ async def cb_stats_commissions(callback: CallbackQuery, session: AsyncSession) -
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "admin:stats_sponsors")
+async def cb_stats_sponsors(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    today_start = datetime.combine(_date.today(), datetime.min.time())
+
+    services = [("subgram", "Subgram"), ("tgrass", "TGrass"), ("botohub", "BotoHub")]
+    lines = []
+    total_shows = 0
+    total_passes = 0
+
+    for key, label in services:
+        shows_all = (await session.execute(
+            select(func.count(SponsorEvent.id)).where(
+                SponsorEvent.service == key, SponsorEvent.event_type == "show"
+            )
+        )).scalar() or 0
+        passes_all = (await session.execute(
+            select(func.count(SponsorEvent.id)).where(
+                SponsorEvent.service == key, SponsorEvent.event_type == "pass"
+            )
+        )).scalar() or 0
+        shows_today = (await session.execute(
+            select(func.count(SponsorEvent.id)).where(
+                SponsorEvent.service == key,
+                SponsorEvent.event_type == "show",
+                SponsorEvent.created_at >= today_start,
+            )
+        )).scalar() or 0
+        passes_today = (await session.execute(
+            select(func.count(SponsorEvent.id)).where(
+                SponsorEvent.service == key,
+                SponsorEvent.event_type == "pass",
+                SponsorEvent.created_at >= today_start,
+            )
+        )).scalar() or 0
+
+        conv_all = f"{round(passes_all / shows_all * 100)}%" if shows_all else "—"
+        conv_today = f"{round(passes_today / shows_today * 100)}%" if shows_today else "—"
+        lines.append(
+            f"<b>{label}</b>\n"
+            f"  Всего показов: <b>{shows_all}</b> | Прошло: <b>{passes_all}</b> ({conv_all})\n"
+            f"  Сегодня: показов <b>{shows_today}</b> | прошло <b>{passes_today}</b> ({conv_today})"
+        )
+        total_shows += shows_all
+        total_passes += passes_all
+
+    total_conv = f"{round(total_passes / total_shows * 100)}%" if total_shows else "—"
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="◀️ Назад", callback_data="admin:stats")
+    ]])
+    await callback.message.edit_text(
+        "📣 <b>Статистика спонсоров</b>\n\n"
+        + "\n\n".join(lines)
+        + f"\n\n<b>Итого: {total_shows} показов | {total_passes} прошли ({total_conv})</b>",
+        parse_mode="HTML",
+        reply_markup=back_kb,
+    )
+    await callback.answer()
+
+
 # ─── Promo: Add ──────────────────────────────────────────────────────────────
 
 @router.callback_query(lambda c: c.data == "admin:add_promo")
@@ -504,7 +599,7 @@ async def cb_list_promos(callback: CallbackQuery, session: AsyncSession) -> None
         return await callback.answer("Нет доступа.", show_alert=True)
     promos = (await session.execute(select(PromoCode).order_by(PromoCode.created_at.desc()))).scalars().all()
     if not promos:
-        await callback.message.edit_text("Промокодов нет.", reply_markup=admin_back_kb())
+        await callback.message.edit_text("🎟 <b>Промокоды</b>\n\nПромокодов пока нет.", parse_mode="HTML", reply_markup=promo_list_kb([]))
         await callback.answer()
         return
     await callback.message.edit_text("🎟 <b>Список промокодов:</b>", parse_mode="HTML", reply_markup=promo_list_kb(promos))
@@ -2472,11 +2567,11 @@ async def _finish_lottery(lottery: Lottery, winner_id: int, session: AsyncSessio
 _EXPORT_MODELS = [
     User, BotSettings, PromoCode, PromoUse, Withdrawal,
     Task, TaskCompletion, GameSession, ButtonContent,
-    Duel, Transfer, Lottery, LotteryTicket,
+    Duel, Transfer, Lottery, LotteryTicket, SponsorEvent,
 ]
 
 _DELETE_ORDER = [
-    LotteryTicket, Lottery, Transfer, Duel, GameSession,
+    SponsorEvent, LotteryTicket, Lottery, Transfer, Duel, GameSession,
     TaskCompletion, Task, Withdrawal, PromoUse, PromoCode,
     ButtonContent, BotSettings, User,
 ]
@@ -2590,6 +2685,7 @@ class AdminIntegrationStates(StatesGroup):
 _INTEGRATION_LABELS = {
     "botohub": "BotoHub",
     "subgram": "Subgram",
+    "tgrass": "TGrass",
     "gramads": "GramAds",
 }
 
@@ -2634,7 +2730,6 @@ async def cb_integration_toggle(callback: CallbackQuery, session: AsyncSession) 
     current = row.value == "1" if row else default
     new_val = "0" if current else "1"
     await set_setting(session, db_key, new_val)
-    await session.commit()
 
     label = _INTEGRATION_LABELS[key]
     state_txt = "увімкнено ✅" if new_val == "1" else "вимкнено ❌"
@@ -2661,17 +2756,28 @@ async def cb_integration_count_set(callback: CallbackQuery, state: FSMContext, s
         return await callback.answer("Нет доступа.", show_alert=True)
 
     key = callback.data.split(":")[2]
-    db_key = f"{key}_count"
-    row = await session.get(BotSettings, db_key)
-    current = int(row.value) if row and row.value else 5
-    label = _INTEGRATION_LABELS.get(key, key)
+
+    if key == "wall":
+        db_key = "wall_sponsor_limit"
+        row = await session.get(BotSettings, db_key)
+        current = int(row.value) if row and row.value else 0
+        label = "Лимит спонсоров"
+        min_val, max_val = 0, 50
+        hint = "Введи новое значение (0–50, 0 = без лимита):"
+    else:
+        db_key = f"{key}_count"
+        row = await session.get(BotSettings, db_key)
+        current = int(row.value) if row and row.value else 5
+        label = _INTEGRATION_LABELS.get(key, key)
+        min_val, max_val = 1, 10
+        hint = "Введи новое значение (1–10):"
 
     await state.set_state(AdminIntegrationStates.set_count)
-    await state.update_data(count_key=db_key)
+    await state.update_data(count_key=db_key, min_val=min_val, max_val=max_val)
     await callback.message.edit_text(
-        f"📊 <b>{label} — кількість спонсорів</b>\n\n"
+        f"📊 <b>{label}</b>\n\n"
         f"Текущее значение: <b>{current}</b>\n"
-        f"Введи новое значение (1–10):",
+        f"{hint}",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2679,21 +2785,24 @@ async def cb_integration_count_set(callback: CallbackQuery, state: FSMContext, s
 
 @router.message(AdminIntegrationStates.set_count)
 async def msg_integration_count(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    data = await state.get_data()
+    min_val = data.get("min_val", 1)
+    max_val = data.get("max_val", 10)
     try:
         val = int(message.text.strip())
-        if not 1 <= val <= 10:
+        if not min_val <= val <= max_val:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введи целое число от 1 до 10:")
+        await message.answer(f"❌ Введи целое число от {min_val} до {max_val}:")
         return
 
-    data = await state.get_data()
     await state.clear()
     db_key = data["count_key"]
     await set_setting(session, db_key, str(val))
     await session.commit()
+    label = "0 = без лимита" if db_key == "wall_sponsor_limit" and val == 0 else str(val)
     await message.answer(
-        f"✅ Количество спонсоров установлено: <b>{val}</b>",
+        f"✅ Значение установлено: <b>{label}</b>",
         parse_mode="HTML",
         reply_markup=admin_main_kb(),
     )
@@ -2722,6 +2831,7 @@ async def cb_integration_key_set(callback: CallbackQuery, state: FSMContext) -> 
     key_names = {
         "botohub": "BOTOHUB_KEY",
         "subgram": "SUBGRAM_KEY",
+        "tgrass": "TGRASS_CODE",
         "gramads": "GRAMADS_TOKEN",
     }
     env_name = key_names.get(key, key.upper() + "_KEY")
@@ -2755,6 +2865,7 @@ async def msg_integration_key(message: Message, state: FSMContext, session: Asyn
     key_map = {
         "botohub": "BOTOHUB_KEY",
         "subgram": "SUBGRAM_KEY",
+        "tgrass": "TGRASS_CODE",
         "gramads": "GRAMADS_TOKEN",
     }
     attr = key_map.get(key)
@@ -2847,3 +2958,197 @@ async def cb_admin_task_reject(callback: CallbackQuery, session: AsyncSession) -
             await callback.bot.send_message(task.creator_id, msg, parse_mode="HTML")
         except Exception:
             pass
+
+
+# ─── Casino (Wheel + Cases) admin ────────────────────────────────────────────
+
+_CASINO_WHEEL_VIDEO_LABELS = {
+    "wheel_video_01x": "🎡 Колесо — видео 0.1x (проигрыш)",
+    "wheel_video_50x": "🎡 Колесо — видео 50x (джекпот)",
+}
+
+
+def _casino_video_label(key: str) -> str:
+    """Human-readable label for any casino video key."""
+    if key in _CASINO_WHEEL_VIDEO_LABELS:
+        return _CASINO_WHEEL_VIDEO_LABELS[key]
+    # case_{tier}_video_{prize_str}  e.g. case_1_video_0_1
+    parts = key.split("_")
+    if len(parts) >= 4 and parts[0] == "case" and parts[2] == "video":
+        tier = parts[1]
+        prize_str = "_".join(parts[3:]).replace("_", ".")
+        icon = _TIER_ICONS.get(int(tier), "🎁")
+        return f"{icon} Кейс {tier}⭐ — приз {prize_str}⭐"
+    return key
+
+
+@router.callback_query(lambda c: c.data == "admin:casino")
+async def cb_admin_casino(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    await callback.message.edit_text(
+        "🎡 <b>Колесо Фортуны & Кейсы</b>\n\nУправление видео и статистикой:",
+        parse_mode="HTML",
+        reply_markup=admin_casino_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "casino:wheel_videos")
+async def cb_casino_wheel_videos(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    await callback.message.edit_text(
+        "🎡 <b>Колесо — видео для исходов</b>\n\nВыбери исход для установки видео:",
+        parse_mode="HTML",
+        reply_markup=admin_wheel_videos_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "casino:cases_videos")
+async def cb_casino_cases_videos(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    await callback.message.edit_text(
+        "🎁 <b>Кейсы — видео призов</b>\n\nВыбери кейс:",
+        parse_mode="HTML",
+        reply_markup=admin_cases_videos_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("casino:cases_tier:"))
+async def cb_casino_cases_tier(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    try:
+        tier = int(callback.data.split(":")[2])
+        if tier not in _CASE_PRIZES_LIST:
+            raise ValueError
+    except (IndexError, ValueError):
+        return await callback.answer("Неверный тир.", show_alert=True)
+
+    icon = _TIER_ICONS.get(tier, "🎁")
+    prizes = _CASE_PRIZES_LIST[tier]
+    await callback.message.edit_text(
+        f"{icon} <b>Кейс {tier}⭐ — выбери приз для настройки видео</b>\n\n"
+        f"Призов: {len(prizes)} | от {prizes[0]}⭐ до {prizes[-1]}⭐",
+        parse_mode="HTML",
+        reply_markup=admin_case_prizes_kb(tier),
+    )
+    await callback.answer()
+
+
+def _is_valid_casino_video_key(key: str) -> bool:
+    if key in _CASINO_WHEEL_VIDEO_LABELS:
+        return True
+    parts = key.split("_")
+    if len(parts) >= 4 and parts[0] == "case" and parts[2] == "video":
+        try:
+            tier = int(parts[1])
+            prize_str = "_".join(parts[3:]).replace("_", ".")
+            prize = float(prize_str)
+            return prize in _CASE_PRIZES_LIST.get(tier, [])
+        except (ValueError, IndexError):
+            pass
+    return False
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("casino:set_video:"))
+async def cb_casino_set_video(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    video_key = callback.data[len("casino:set_video:"):]
+    if not _is_valid_casino_video_key(video_key):
+        return await callback.answer("Неизвестный ключ.", show_alert=True)
+    await state.set_state(AdminCasinoStates.upload_video)
+    await state.update_data(video_key=video_key)
+    label = _casino_video_label(video_key)
+    await callback.message.edit_text(
+        f"🎬 Отправь видео для: <b>{label}</b>\n\n"
+        "Пришли видео-файл в этот чат.",
+        parse_mode="HTML",
+        reply_markup=casino_back_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminCasinoStates.upload_video)
+async def msg_casino_upload_video(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    if not is_admin(message.from_user.id):
+        return
+    if not message.video and not message.animation and not message.document:
+        await message.answer("❌ Отправь видео-файл.")
+        return
+    data = await state.get_data()
+    await state.clear()
+    video_key = data.get("video_key", "")
+    if message.video:
+        file_id = message.video.file_id
+    elif message.animation:
+        file_id = message.animation.file_id
+    else:
+        file_id = message.document.file_id
+
+    await set_setting(session, video_key, file_id)
+    label = _casino_video_label(video_key)
+
+    # Determine which keyboard to show after upload
+    parts = video_key.split("_")
+    if len(parts) >= 4 and parts[0] == "case" and parts[2] == "video":
+        tier = int(parts[1])
+        back_kb = admin_case_prizes_kb(tier)
+    else:
+        back_kb = admin_casino_kb()
+
+    await message.answer(
+        f"✅ Видео для <b>{label}</b> установлено!",
+        parse_mode="HTML",
+        reply_markup=back_kb,
+    )
+
+
+@router.callback_query(lambda c: c.data == "casino:profit")
+async def cb_casino_profit(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    async def _row(key: str) -> float:
+        r = await session.get(BotSettings, key)
+        if r:
+            try:
+                return float(r.value)
+            except (ValueError, TypeError):
+                pass
+        return 0.0
+
+    lines = []
+    games_info = [
+        ("wheel",  "🎡 Колесо (Все или ничего)"),
+        ("case_1", "🥉 Кейс Бронза (1⭐)"),
+        ("case_3", "🥈 Кейс Серебро (3⭐)"),
+        ("case_5", "🥇 Кейс Золото (5⭐)"),
+    ]
+    total_bet = total_pay = 0.0
+    for prefix, label in games_info:
+        bet = await _row(f"{prefix}_total_bet")
+        pay = await _row(f"{prefix}_total_payout")
+        profit = round(bet - pay, 2)
+        edge = round((1 - pay / bet) * 100, 1) if bet > 0 else 0
+        total_bet += bet
+        total_pay += pay
+        lines.append(
+            f"<b>{label}</b>\n"
+            f"  Ставок: <b>{bet:.2f}⭐</b>  Выплат: <b>{pay:.2f}⭐</b>\n"
+            f"  Прибыль: <b>{profit:+.2f}⭐</b>  Edge: <b>{edge}%</b>"
+        )
+
+    total_profit = round(total_bet - total_pay, 2)
+    text = (
+        "📊 <b>Прибыль казино</b>\n\n"
+        + "\n\n".join(lines)
+        + f"\n\n<b>Итого: ставок {total_bet:.2f}⭐ | выплат {total_pay:.2f}⭐ | прибыль {total_profit:+.2f}⭐</b>"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=casino_back_kb())
+    await callback.answer()

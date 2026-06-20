@@ -77,6 +77,7 @@ class CombinedWallMiddleware(BaseMiddleware):
             session2 = data.get("session")
             _bh_on = bool(config.BOTOHUB_KEY)
             _sg_on = bool(config.SUBGRAM_KEY)
+            _tg_on = bool(config.TGRASS_CODE)
             _sg_count = 5
             if session2:
                 from database.models import BotSettings as _BS2
@@ -89,9 +90,14 @@ class CombinedWallMiddleware(BaseMiddleware):
 
                 _bh_on = await _flag("integration_botohub_enabled", _bh_on)
                 _sg_on = await _flag("integration_subgram_enabled", _sg_on)
+                _tg_on = await _flag("integration_tgrass_enabled", _tg_on)
                 _sg_row = await session2.get(_BS2, "subgram_count")
                 if _sg_row and _sg_row.value:
                     _sg_count = int(_sg_row.value)
+                _wl_row = await session2.get(_BS2, "wall_sponsor_limit")
+                _wall_limit = int(_wl_row.value) if _wl_row and _wl_row.value else 0
+            else:
+                _wall_limit = 0
 
             async def _skip_bh():
                 return {"completed": True, "skip": True, "tasks": []}
@@ -99,20 +105,34 @@ class CombinedWallMiddleware(BaseMiddleware):
             async def _skip_list():
                 return []
 
-            sg_sponsors, bh_result = await asyncio.gather(
+            from services.tgrass import get_tgrass_offers as _get_tg
+            sg_sponsors, bh_result, tg_offers = await asyncio.gather(
                 get_subgram_sponsors(user.id, _sg_count, user=user) if _sg_on else _skip_list(),
                 check_botohub(user.id) if _bh_on else _skip_bh(),
+                _get_tg(user.id, user=user) if _tg_on else _skip_list(),
             )
 
             bh_pending = _bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
             sg_pending = _sg_on and bool(sg_sponsors)
+            tg_pending = _tg_on and bool(tg_offers)
 
-            if sg_pending or bh_pending:
+            if sg_pending or bh_pending or tg_pending:
+                if session2:
+                    from services.sponsor_stats import log_wall_show as _log_show
+                    shown = (
+                        (["subgram"] if sg_pending else [])
+                        + (["tgrass"] if tg_pending else [])
+                        + (["botohub"] if bh_pending else [])
+                    )
+                    await _log_show(session2, *shown)
+
                 from keyboards.botohub import build_combined_wall_kb
                 wall_text = pe("📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>")
                 wall_kb = build_combined_wall_kb(
                     bh_result["tasks"] if bh_pending else [],
                     subgram_sponsors=sg_sponsors if sg_pending else [],
+                    tgrass_offers=tg_offers if tg_pending else [],
+                    limit=_wall_limit,
                 )
                 if isinstance(event, CallbackQuery):
                     try:
@@ -123,8 +143,8 @@ class CombinedWallMiddleware(BaseMiddleware):
                 else:
                     await event.answer(wall_text, reply_markup=wall_kb)
                 logger.info(
-                    "CombinedWall: blocked user %s (sg=%s, bh=%s)",
-                    user.id, sg_pending, bh_pending,
+                    "CombinedWall: blocked user %s (sg=%s, bh=%s, tg=%s)",
+                    user.id, sg_pending, bh_pending, tg_pending,
                 )
                 return
 
@@ -229,8 +249,6 @@ class RegisteredUserMiddleware(BaseMiddleware):
         now = datetime.utcnow()
         if db_user.last_seen_at is None or (now - db_user.last_seen_at).total_seconds() > 3600:
             db_user.last_seen_at = now
-            session = data.get("session")
-            if session:
-                await session.commit()
+            await session.commit()
 
         return await handler(event, data)

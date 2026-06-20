@@ -1,35 +1,61 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def build_botohub_wall_kb(tasks: list[str]) -> InlineKeyboardMarkup:
-    buttons = []
-    for i, url in enumerate(tasks, start=1):
-        buttons.append([InlineKeyboardButton(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")])
-    buttons.append(
-        [InlineKeyboardButton(text="Я подписался", callback_data="botohub:check", style="success", icon_custom_emoji_id="5462919317832082236")]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+def build_botohub_wall_kb(tasks: list[str], limit: int = 0) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    items = tasks[:limit] if limit > 0 else tasks
+    for i, url in enumerate(items, start=1):
+        builder.button(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")
+    builder.adjust(2)
+    builder.row(InlineKeyboardButton(
+        text="Я подписался", callback_data="botohub:check",
+        style="success", icon_custom_emoji_id="5462919317832082236",
+    ))
+    return builder.as_markup()
 
 
 def build_combined_wall_kb(
     botohub_tasks: list[str],
     subgram_sponsors: list[dict] | None = None,
+    tgrass_offers: list[dict] | None = None,
+    limit: int = 0,
 ) -> InlineKeyboardMarkup:
-    buttons = []
+    builder = InlineKeyboardBuilder()
+
+    sponsor_buttons: list[InlineKeyboardButton] = []
     i = 1
 
-    # Subgram first
     for sp in (subgram_sponsors or []):
-        label = sp.get("button_text") or sp.get("title") or f"Канал {i}"
-        buttons.append([InlineKeyboardButton(text=label, url=sp["link"], style="primary", icon_custom_emoji_id="5370599459661045441")])
+        sponsor_buttons.append(InlineKeyboardButton(
+            text=f"Канал {i}", url=sp["link"],
+            style="primary", icon_custom_emoji_id="5370599459661045441",
+        ))
         i += 1
 
-    # BotoHub second
+    for offer in (tgrass_offers or []):
+        sponsor_buttons.append(InlineKeyboardButton(
+            text=f"Канал {i}", url=offer["link"],
+            style="primary", icon_custom_emoji_id="5370599459661045441",
+        ))
+        i += 1
+
     for url in (botohub_tasks or []):
-        buttons.append([InlineKeyboardButton(text=f"Канал {i}", url=url, style="primary", icon_custom_emoji_id="5370599459661045441")])
+        sponsor_buttons.append(InlineKeyboardButton(
+            text=f"Канал {i}", url=url,
+            style="primary", icon_custom_emoji_id="5370599459661045441",
+        ))
         i += 1
 
-    buttons.append(
-        [InlineKeyboardButton(text="Я подписался", callback_data="wall:check", style="success", icon_custom_emoji_id="5462919317832082236")]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    if limit > 0:
+        sponsor_buttons = sponsor_buttons[:limit]
+
+    for btn in sponsor_buttons:
+        builder.add(btn)
+    builder.adjust(2)
+
+    builder.row(InlineKeyboardButton(
+        text="Я подписался", callback_data="wall:check",
+        style="success", icon_custom_emoji_id="5462919317832082236",
+    ))
+    return builder.as_markup()

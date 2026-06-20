@@ -11,6 +11,8 @@ from keyboards.botohub import build_botohub_wall_kb, build_combined_wall_kb
 from keyboards.main import main_menu_kb
 from services.referral import grant_referral_reward_if_pending
 from services.subgram import get_subgram_sponsors
+from services.tgrass import get_tgrass_offers
+from services.sponsor_stats import log_wall_pass
 from services.botohub_views import show_botohub_views
 from utils.botohub_api import check_botohub
 from utils.emoji import pe
@@ -53,7 +55,9 @@ async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> No
             show_alert=True,
         )
         if result["tasks"]:
-            wall_kb = build_botohub_wall_kb(result["tasks"])
+            wall_limit_row = await session.get(BotSettings, "wall_sponsor_limit")
+            wall_limit = int(wall_limit_row.value) if wall_limit_row and wall_limit_row.value else 0
+            wall_kb = build_botohub_wall_kb(result["tasks"], limit=wall_limit)
             try:
                 await callback.message.edit_reply_markup(reply_markup=wall_kb)
             except Exception:
@@ -79,22 +83,28 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
 
     bh_on = await _flag("integration_botohub_enabled", bool(_cfg.BOTOHUB_KEY))
     sg_on = await _flag("integration_subgram_enabled", bool(_cfg.SUBGRAM_KEY))
+    tg_on = await _flag("integration_tgrass_enabled", bool(_cfg.TGRASS_CODE))
 
     sg_count_row = await session.get(BotSettings, "subgram_count")
     sg_count = int(sg_count_row.value) if sg_count_row and sg_count_row.value else 5
 
+    wall_limit_row = await session.get(BotSettings, "wall_sponsor_limit")
+    wall_limit = int(wall_limit_row.value) if wall_limit_row and wall_limit_row.value else 0
+
     async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
     async def _skip_list(): return []
 
-    sg_sponsors, bh_result = await asyncio.gather(
+    sg_sponsors, bh_result, tg_offers = await asyncio.gather(
         get_subgram_sponsors(user_id, sg_count, user=callback.from_user) if sg_on else _skip_list(),
         check_botohub(user_id) if bh_on else _skip_bh(),
+        get_tgrass_offers(user_id, user=callback.from_user) if tg_on else _skip_list(),
     )
 
     bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
     sg_pending = sg_on and bool(sg_sponsors)
+    tg_pending = tg_on and bool(tg_offers)
 
-    if sg_pending or bh_pending:
+    if sg_pending or bh_pending or tg_pending:
         await callback.answer(
             "❌ Вы не подписались на все каналы.\nПодпишитесь и нажмите кнопку снова.",
             show_alert=True,
@@ -102,18 +112,27 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
         wall_kb = build_combined_wall_kb(
             bh_result["tasks"] if bh_pending else [],
             subgram_sponsors=sg_sponsors if sg_pending else [],
+            tgrass_offers=tg_offers if tg_pending else [],
+            limit=wall_limit,
         )
         try:
             await callback.message.edit_reply_markup(reply_markup=wall_kb)
         except Exception:
             pass
         logger.info(
-            "CombinedWall: user %s still blocked (sg=%s, bh=%s)",
-            user_id, sg_pending, bh_pending,
+            "CombinedWall: user %s still blocked (sg=%s, bh=%s, tg=%s)",
+            user_id, sg_pending, bh_pending, tg_pending,
         )
         return
 
-    # All passed — referral reward + ads + main menu
+    # All passed — log completions + referral reward + ads + main menu
+    passed_services = (
+        (["subgram"] if sg_on else [])
+        + (["tgrass"] if tg_on else [])
+        + (["botohub"] if bh_on else [])
+    )
+    await log_wall_pass(session, *passed_services)
+
     db_user = await session.get(User, user_id)
     if db_user and db_user.referral_reward_pending:
         await grant_referral_reward_if_pending(db_user, session, callback.bot)

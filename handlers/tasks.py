@@ -56,7 +56,11 @@ async def _show_next_task(
             await state.update_data(current_task_type="bot", current_task_id=str(task.id))
         url = None
         if task.task_type == "subscribe" and task.channel_id:
-            url = f"https://t.me/{task.channel_id.lstrip('@').lstrip('-100')}"
+            cid = task.channel_id.lstrip('@')
+            if cid.startswith('-100'):
+                url = f"https://t.me/c/{cid[4:]}"
+            elif not cid.startswith('-'):
+                url = f"https://t.me/{cid}"
         kb = task_single_kb(task.task_type, str(task.id), url)
         extra = ""
         if task.task_type == "referrals" and task.target_value:

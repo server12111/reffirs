@@ -13,6 +13,8 @@ from keyboards.main import main_menu_kb
 from config import config
 from services.referral import grant_referral_reward_if_pending, notify_referrer_joined, cancel_referral_no_sponsors
 from services.subgram import get_subgram_sponsors
+from services.tgrass import get_tgrass_offers
+from services.sponsor_stats import log_wall_show
 from services.botohub_views import show_botohub_views
 from utils.botohub_api import check_botohub
 from utils.emoji import pe
@@ -81,10 +83,9 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
     )
 
     if is_new and user.referrer_id:
-        await message.answer("👋 Добро пожаловать! Ты перешёл по реферальной ссылке.")
         await notify_referrer_joined(user, session, message.bot)
 
-    # ── Combined subscription wall (Subgram + BotoHub) ──
+    # ── Combined subscription wall (Subgram + TGrass + BotoHub) ──
     if message.from_user.id not in config.ADMIN_IDS:
         user_id = message.from_user.id
 
@@ -94,34 +95,59 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
 
         bh_on = await _flag("integration_botohub_enabled", bool(config.BOTOHUB_KEY))
         sg_on = await _flag("integration_subgram_enabled", bool(config.SUBGRAM_KEY))
+        tg_on = await _flag("integration_tgrass_enabled", bool(config.TGRASS_CODE))
 
         sg_count_row = await session.get(BotSettings, "subgram_count")
         sg_count = int(sg_count_row.value) if sg_count_row and sg_count_row.value else 5
 
+        wall_limit_row = await session.get(BotSettings, "wall_sponsor_limit")
+        wall_limit = int(wall_limit_row.value) if wall_limit_row and wall_limit_row.value else 0
+
         async def _skip_bh(): return {"completed": True, "skip": True, "tasks": []}
         async def _skip_list(): return []
 
-        sg_sponsors, bh_result = await asyncio.gather(
+        sg_sponsors, bh_result, tg_offers = await asyncio.gather(
             get_subgram_sponsors(user_id, sg_count, user=message.from_user) if sg_on else _skip_list(),
             check_botohub(user_id) if bh_on else _skip_bh(),
+            get_tgrass_offers(user_id, user=message.from_user) if tg_on else _skip_list(),
         )
 
         bh_pending = bh_on and not bh_result["completed"] and not bh_result["skip"] and bool(bh_result["tasks"])
         sg_pending = sg_on and bool(sg_sponsors)
+        tg_pending = tg_on and bool(tg_offers)
 
-        if sg_pending or bh_pending:
+        if sg_pending or bh_pending or tg_pending:
+            # Log wall show per service
+            shown_services = (
+                (["subgram"] if sg_pending else [])
+                + (["tgrass"] if tg_pending else [])
+                + (["botohub"] if bh_pending else [])
+            )
+            await log_wall_show(session, *shown_services)
+
+            welcome_line = (
+                "👋 <b>Добро пожаловать!</b> Ты перешёл по реферальной ссылке.\n\n"
+                if is_new and user.referrer_id else ""
+            )
             kb = build_combined_wall_kb(
                 bh_result["tasks"] if bh_pending else [],
                 subgram_sponsors=sg_sponsors if sg_pending else [],
+                tgrass_offers=tg_offers if tg_pending else [],
+                limit=wall_limit,
             )
             await message.answer(
-                pe("📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>"),
+                pe(f"{welcome_line}📢 <b>Подпишитесь на каналы ниже и нажмите «Я подписался».</b>"),
                 reply_markup=kb,
             )
             return
 
-    # No sponsors shown — cancel pending reward and notify referrer
-    await cancel_referral_no_sponsors(user, session, message.bot)
+        # Sponsors checked but nothing pending for this user.
+        # Cancel the referral reward ONLY if all integrations are disabled —
+        # meaning the user will never be shown a wall and can never earn it.
+        # If integrations are on but returned empty (user already passed, API glitch,
+        # or repeat /start), keep reward pending — middleware will grant it later.
+        if not bh_on and not sg_on and not tg_on:
+            await cancel_referral_no_sponsors(user, session, message.bot)
     ad_sent = await show_botohub_views(message.from_user.id, hi=True)
     if ad_sent:
         await asyncio.sleep(0.5)

@@ -26,7 +26,13 @@ async def main() -> None:
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher(storage=SQLStorage("fsm_storage.db"))
+    import os
+    _fsm_path = config.FSM_DB_PATH or (
+        os.path.join(os.path.dirname(os.path.abspath(config.DATABASE_PATH)), "fsm_storage.db")
+        if config.DATABASE_PATH
+        else "fsm_storage.db"
+    )
+    dp = Dispatcher(storage=SQLStorage(_fsm_path))
 
     # Middlewares — order matters: session → combined wall → user check
     dp.message.middleware(SessionMiddleware())
@@ -64,7 +70,6 @@ async def _lottery_time_check_loop(bot) -> None:
     from sqlalchemy import select
     from handlers.lottery import finish_lottery
 
-    await asyncio.sleep(60)
     while True:
         try:
             async with SessionFactory() as session:

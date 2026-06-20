@@ -6,39 +6,46 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-TGRASS_URL = "https://tgrass.space/offers"
+TGRASS_OFFERS_URL = "https://tgrass.space/offers"
 TGRASS_RESET_URL = "https://tgrass.space/reset_offers"
 
 
 async def get_tgrass_offers(user_id: int, user=None) -> list[dict]:
     """
-    Fetch unsubscribed TGrass offers for the user.
+    Fetch TGrass offers for the user.
 
-    Returns list of offer dicts: [{"name": str, "link": str, "type": str, "offer_id": int}, ...]
-    Returns [] if user passed all offers, no offers available, key not set, or on error.
+    Returns list of offer dicts when user hasn't subscribed to all:
+      [{"name": str, "link": str, "type": str, "offer_id": int, "subscribed": bool}, ...]
+
+    Returns [] when:
+      - status "ok"       → user subscribed to everything
+      - status "no_offers" → nothing to show right now
+      - TGRASS_CODE not configured or any network error
     """
     if not config.TGRASS_CODE:
         return []
 
     payload: dict = {
         "tg_user_id": user_id,
-        "is_premium": bool(getattr(user, "is_premium", False)),
+        "is_premium": bool(getattr(user, "is_premium", False) or False),
         "lang": getattr(user, "language_code", "ru") or "ru",
     }
-    login = getattr(user, "username", None)
-    if login:
-        payload["tg_login"] = login
+    username = getattr(user, "username", None)
+    if username:
+        payload["tg_login"] = username
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                TGRASS_URL,
+                TGRASS_OFFERS_URL,
                 json=payload,
                 headers={
+                    "accept": "application/json",
                     "Content-Type": "application/json",
                     "Auth": config.TGRASS_CODE,
                 },
                 timeout=aiohttp.ClientTimeout(total=5),
+                ssl=False,
             ) as resp:
                 if resp.status != 200:
                     logger.error("TGrass: HTTP %s for user %s", resp.status, user_id)
@@ -48,23 +55,19 @@ async def get_tgrass_offers(user_id: int, user=None) -> list[dict]:
                 status = data.get("status")
                 logger.debug("TGrass: status=%s for user %s", status, user_id)
 
-                if status in ("ok", "no_offers"):
-                    return []  # user passed or nothing to show
-
                 if status == "not_ok":
-                    offers = data.get("offers", [])
-                    return [o for o in offers if not o.get("subscribed", False)]
+                    return data.get("offers", [])
 
                 return []
 
     except aiohttp.ClientConnectorError as exc:
-        logger.warning("TGrass: Connection error for user %s: %s", user_id, exc)
+        logger.warning("TGrass: connection error for user %s: %s", user_id, exc)
         return []
     except aiohttp.ServerTimeoutError:
-        logger.warning("TGrass: Timeout for user %s", user_id)
+        logger.warning("TGrass: timeout for user %s", user_id)
         return []
     except Exception as exc:
-        logger.warning("TGrass: Unexpected error for user %s: %s", user_id, exc)
+        logger.warning("TGrass: unexpected error for user %s: %s", user_id, exc)
         return []
 
 
@@ -82,6 +85,7 @@ async def reset_tgrass_offers(user_id: int) -> None:
                     "Auth": config.TGRASS_CODE,
                 },
                 timeout=aiohttp.ClientTimeout(total=5),
+                ssl=False,
             )
     except Exception:
         pass

@@ -89,8 +89,9 @@ async def msg_transfer_username(
         await message.answer("❌ Нельзя переводить звёзды самому себе:")
         return
 
+    from sqlalchemy import func as _func
     target = (await session.execute(
-        select(User).where(User.username == username)
+        select(User).where(_func.lower(User.username) == username.lower())
     )).scalar_one_or_none()
 
     if not target:

@@ -130,8 +130,17 @@ async def _try_auto_draw(lottery: Lottery, session: AsyncSession, bot: Bot) -> b
     return True
 
 
+_MIN_REFS = 3
+
+
 @router.callback_query(lambda c: c.data == "game:lottery")
 async def cb_lottery(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
+    if db_user.referrals_count < _MIN_REFS:
+        await callback.answer(
+            f"❌ Нужно минимум {_MIN_REFS} реферала.\nТвоих: {db_user.referrals_count}/{_MIN_REFS}",
+            show_alert=True,
+        )
+        return
     lottery = await _get_active_lottery(session)
 
     if lottery is None:

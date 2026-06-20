@@ -16,6 +16,7 @@ class Config:
     ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID", "0"))
     BOTOHUB_KEY: str = os.getenv("BOTOHUB_KEY", "")
     SUBGRAM_KEY: str = os.getenv("SUBGRAM_KEY", "")
+    TGRASS_CODE: str = os.getenv("TGRASS_CODE", "")
     GRAMADS_TOKEN: str = os.getenv("GRAMADS_TOKEN", "")
     BOTOHUB_VIEWS_KEY: str = os.getenv("BOTOHUB_VIEWS_KEY", "")
     BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")
@@ -24,6 +25,8 @@ class Config:
     BONUS_MIN: float = float(os.getenv("BONUS_MIN", "0.5"))
     BONUS_MAX: float = float(os.getenv("BONUS_MAX", "1.0"))
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8080"))
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "")
+    FSM_DB_PATH: str = os.getenv("FSM_DB_PATH", "")
 
 
 config = Config()

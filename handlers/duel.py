@@ -177,8 +177,17 @@ async def _resolve_duel(duel: Duel, session: AsyncSession, bot: Bot) -> None:
 
 # ─── Duel menu ────────────────────────────────────────────────────────────────
 
+_MIN_REFS = 3
+
+
 @router.callback_query(lambda c: c.data == "duel:menu")
 async def cb_duel_menu(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
+    if db_user.referrals_count < _MIN_REFS:
+        await callback.answer(
+            f"❌ Нужно минимум {_MIN_REFS} реферала.\nТвоих: {db_user.referrals_count}/{_MIN_REFS}",
+            show_alert=True,
+        )
+        return
     default_text = (
         "⚔️ <b>Дуэли</b>\n\n"
         "Бросьте кубик против другого игрока!\n\n"

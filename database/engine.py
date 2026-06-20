@@ -4,10 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from database.models import ButtonContent, BotSettings
 
-_db_path = os.environ.get(
-    "DATABASE_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "database.db"),
-)
+_db_path = os.environ.get("DATABASE_PATH") or os.path.join(os.path.dirname(__file__), "..", "database.db")
 _db_path = os.path.abspath(_db_path)
 DATABASE_URL = f"sqlite+aiosqlite:///{_db_path}"
 
