@@ -1,13 +1,7 @@
-from datetime import datetime, timedelta
-
 from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import BotSettings, User
-
-# Minimum age (minutes) of a referred account before the reward is granted.
-# Prevents instant fake account referrals.
-REFERRAL_MIN_AGE_MINUTES = 10
 
 
 async def _get_fixed_reward(session: AsyncSession) -> float:
@@ -70,19 +64,9 @@ async def cancel_referral_no_sponsors(
 async def grant_referral_reward_if_pending(
     user: User, session: AsyncSession, bot: Bot
 ) -> None:
-    """Stage 2: give reward to referrer after new user passes subscription wall.
-
-    Anti-cheat: account must be at least REFERRAL_MIN_AGE_MINUTES old.
-    If too new, skip silently — reward stays pending and will be retried later.
-    """
+    """Stage 2: give reward to referrer after new user passes subscription wall."""
     if not user.referral_reward_pending or not user.referrer_id:
         return
-
-    # Anti-cheat: enforce minimum account age to deter instant fake registrations
-    if user.created_at:
-        age = datetime.utcnow() - user.created_at
-        if age < timedelta(minutes=REFERRAL_MIN_AGE_MINUTES):
-            return  # too new — will be retried on the next request
 
     referrer = await session.get(User, user.referrer_id)
     if not referrer:
