@@ -129,32 +129,44 @@ async def check_and_grant(
         )).all()
     )
 
-    grants = []
-    for tid in task_ids:
-        if tid in completed:
-            continue
-        task = _TASK_MAP.get(tid)
-        if not task:
-            continue
-        progress = await get_task_progress(user, session, task["type"], **kwargs)
-        if progress >= task["target"]:
-            grants.append(task)
-            user.stars_balance += task["reward"]
-            session.add(BattlePassCompletion(user_id=user.user_id, task_id=tid))
+    # Sequential: only the first incomplete task is active
+    current_task = None
+    for task in TASKS:
+        if task["id"] not in completed:
+            current_task = task
+            break
 
-    if grants:
-        await session.commit()
-        for task in grants:
-            try:
-                await bot.send_message(
-                    user.user_id,
-                    f'🏆 <b>Батл Пасс — задание выполнено!</b>\n\n'
-                    f'{task["title"]}\n\n'
-                    f'<b>+{task["reward"]:.0f} ⭐</b> зачислено на баланс!',
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+    if current_task is None or current_task["id"] not in task_ids:
+        return
+
+    progress = await get_task_progress(user, session, current_task["type"], **kwargs)
+    if progress < current_task["target"]:
+        return
+
+    user.stars_balance += current_task["reward"]
+    session.add(BattlePassCompletion(user_id=user.user_id, task_id=current_task["id"]))
+    await session.commit()
+
+    # Find next task to announce unlock
+    next_task = None
+    for task in TASKS:
+        if task["id"] not in completed and task["id"] != current_task["id"]:
+            next_task = task
+            break
+
+    msg = (
+        f'🏆 <b>Батл Пасс — задание выполнено!</b>\n\n'
+        f'{current_task["title"]}\n\n'
+        f'<b>+{current_task["reward"]:.0f} ⭐</b> зачислено на баланс!'
+    )
+    if next_task:
+        msg += f'\n\n🔓 Следующее задание: <b>{next_task["title"]}</b>'
+    else:
+        msg += '\n\n🎉 Все задания Батл Пасса выполнены!'
+    try:
+        await bot.send_message(user.user_id, msg, parse_mode="HTML")
+    except Exception:
+        pass
 
 
 async def after_game(

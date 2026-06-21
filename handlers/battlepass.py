@@ -21,20 +21,31 @@ async def cb_battlepass(callback: CallbackQuery, session: AsyncSession, db_user:
         )).all()
     )
 
+    # Sequential: find current active task (first incomplete in order)
+    current_task = None
+    for task in TASKS:
+        if task["id"] not in completed_ids:
+            current_task = task
+            break
+
     lines = ["🏆 <b>Батл Пасс</b>\n"]
 
     for task in TASKS:
         reward_str = f"+{task['reward']:.0f} ⭐"
         if task["id"] in completed_ids:
-            lines.append(f"✅ {task['title']} — <b>{reward_str}</b>")
-        else:
+            lines.append(f"✅ <s>{task['title']}</s> — <b>{reward_str}</b>")
+        elif current_task and task["id"] == current_task["id"]:
             progress = await get_task_progress(db_user, session, task["type"])
             target = task["target"]
             capped = min(progress, target)
-            if capped > 0:
-                lines.append(f"🔓 {task['title']} — {capped}/{target} — <b>{reward_str}</b>")
-            else:
-                lines.append(f"🔒 {task['title']} — 0/{target} — <b>{reward_str}</b>")
+            pct = int(capped / target * 10)
+            bar = "█" * pct + "░" * (10 - pct)
+            lines.append(
+                f"🔓 <b>{task['title']}</b>\n"
+                f"   [{bar}] {capped}/{target} — <b>{reward_str}</b>"
+            )
+        else:
+            lines.append(f"🔒 {task['title']} — <b>{reward_str}</b>")
 
     done = len(completed_ids)
     total = len(TASKS)
