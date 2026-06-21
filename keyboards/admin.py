@@ -61,8 +61,9 @@ _GAME_LABELS = {
     "bowling":    "🎳 Боулинг",
     "dice":       "🎲 Кубики",
     "slots":      "🎰 Слоты",
+    "darts":      "🎯 Дартс",
 }
-_GAME_TYPES = ["football", "basketball", "bowling", "dice", "slots"]
+_GAME_TYPES = ["football", "basketball", "bowling", "dice", "slots", "darts"]
 
 
 def games_list_kb(statuses: dict[str, bool]) -> InlineKeyboardMarkup:
@@ -85,6 +86,22 @@ def game_detail_kb(game_type: str, is_enabled: bool) -> InlineKeyboardMarkup:
     if game_type == "slots":
         builder.row(InlineKeyboardButton(text="📈 Коэф. 777 (Джекпот)", callback_data=f"agame:coeff1:{game_type}"))
         builder.row(InlineKeyboardButton(text="📈 Коэф. 3 фрукта", callback_data=f"agame:coeff2:{game_type}"))
+    elif game_type == "football":
+        builder.row(InlineKeyboardButton(text="⚽ Коэф. Гол", callback_data="agame:cg:football:goal"))
+        builder.row(InlineKeyboardButton(text="🥅 Коэф. Промах", callback_data="agame:cg:football:miss"))
+    elif game_type == "basketball":
+        builder.row(InlineKeyboardButton(text="🏀 Коэф. Чистый гол", callback_data="agame:cg:basketball:clean"))
+        builder.row(InlineKeyboardButton(text="🏀 Коэф. Любой гол", callback_data="agame:cg:basketball:any"))
+        builder.row(InlineKeyboardButton(text="🏀 Коэф. Застрял мяч", callback_data="agame:cg:basketball:stuck"))
+        builder.row(InlineKeyboardButton(text="🏀 Коэф. Промах", callback_data="agame:cg:basketball:miss"))
+    elif game_type == "bowling":
+        builder.row(InlineKeyboardButton(text="🎳 Коэф. Страйк", callback_data="agame:cg:bowling:strike"))
+        builder.row(InlineKeyboardButton(text="🎳 Коэф. Промах", callback_data="agame:cg:bowling:miss"))
+    elif game_type == "darts":
+        builder.row(InlineKeyboardButton(text="🎯 Коэф. В центр", callback_data="agame:cg:darts:bullseye"))
+        builder.row(InlineKeyboardButton(text="🎯 Коэф. Красный сектор", callback_data="agame:cg:darts:red"))
+        builder.row(InlineKeyboardButton(text="🎯 Коэф. Белый сектор", callback_data="agame:cg:darts:white"))
+        builder.row(InlineKeyboardButton(text="🎯 Коэф. Отскок", callback_data="agame:cg:darts:bounce"))
     else:
         builder.row(InlineKeyboardButton(text="📈 Коэффициент", callback_data=f"agame:coeff:{game_type}"))
     builder.row(InlineKeyboardButton(text="💰 Мин. ставка", callback_data=f"agame:min_bet:{game_type}"))

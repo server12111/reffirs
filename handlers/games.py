@@ -10,7 +10,8 @@ from sqlalchemy import select, func
 from database.models import User, GameSession, BotSettings
 from handlers.button_helper import answer_with_content, safe_edit
 from keyboards.games import (
-    games_menu_kb, dice_side_kb, game_result_kb, game_cancel_kb,
+    games_menu_kb, dice_side_kb, football_side_kb, bowling_side_kb,
+    game_result_kb, game_cancel_kb,
     GAME_TYPES, GAME_LABELS,
 )
 
@@ -22,20 +23,24 @@ GAME_EMOJIS = {
     "bowling":    "🎳",
     "dice":       "🎲",
     "slots":      "🎰",
+    "darts":      "🎯",
 }
 
 GAME_DEFAULTS = {
-    "football":   {"coeff": 2.5,  "min_bet": 1.0, "daily_limit": 0},
-    "basketball": {"coeff": 1.25, "min_bet": 1.0, "daily_limit": 0},
-    "bowling":    {"coeff": 3.0,  "min_bet": 1.0, "daily_limit": 0},
-    "dice":       {"coeff": 1.5,  "min_bet": 1.0, "daily_limit": 0},
-    "slots":      {"coeff1": 6.0, "coeff2": 2.0, "min_bet": 1.0, "daily_limit": 0},
+    "football":   {"coeff_goal": 1.5, "coeff_miss": 2.2, "min_bet": 1.0, "daily_limit": 0},
+    "basketball": {"coeff_clean": 4.0, "coeff_any": 2.2, "coeff_stuck": 4.0, "coeff_miss": 1.5, "min_bet": 1.0, "daily_limit": 0},
+    "bowling":    {"coeff_strike": 5.0, "coeff_miss": 4.0, "min_bet": 1.0, "daily_limit": 0},
+    "dice":       {"coeff": 1.5, "min_bet": 1.0, "daily_limit": 0},
+    "slots":      {"coeff1": 10.0, "coeff2": 2.0, "min_bet": 1.0, "daily_limit": 0},
+    "darts":      {"coeff_bullseye": 5.0, "coeff_red": 1.8, "coeff_white": 2.5, "coeff_bounce": 5.0, "min_bet": 1.0, "daily_limit": 0},
 }
 
 
 class GameStates(StatesGroup):
     enter_bet = State()
     choose_dice_side = State()
+    choose_football_side = State()
+    choose_bowling_side = State()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,11 +92,27 @@ async def _load_games_config(session: AsyncSession) -> dict:
             "min_bet": float(min_bet_row.value) if min_bet_row else 1.0,
         }
         if game == "slots":
-            c1 = await _get_float(session, "game_slots_coeff1", 6.0)
+            c1 = await _get_float(session, "game_slots_coeff1", 10.0)
             c2 = await _get_float(session, "game_slots_coeff2", 2.0)
             cfg["coeff_label"] = f"x{c2:.4g}–x{c1:.4g}"
+        elif game == "football":
+            cg = await _get_float(session, "game_football_coeff_goal", 1.5)
+            cm = await _get_float(session, "game_football_coeff_miss", 2.2)
+            cfg["coeff_label"] = f"Гол x{cg:.4g} / Промах x{cm:.4g}"
+        elif game == "basketball":
+            lo = await _get_float(session, "game_basketball_coeff_miss", 1.5)
+            hi = await _get_float(session, "game_basketball_coeff_clean", 4.0)
+            cfg["coeff_label"] = f"x{lo:.4g}–x{hi:.4g}"
+        elif game == "darts":
+            lo = await _get_float(session, "game_darts_coeff_red", 1.8)
+            hi = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
+            cfg["coeff_label"] = f"x{lo:.4g}–x{hi:.4g}"
+        elif game == "bowling":
+            cs = await _get_float(session, "game_bowling_coeff_strike", 5.0)
+            cm = await _get_float(session, "game_bowling_coeff_miss", 4.0)
+            cfg["coeff_label"] = f"Страйк x{cs:.4g} / Промах x{cm:.4g}"
         else:
-            default = GAME_DEFAULTS[game]["coeff"]
+            default = GAME_DEFAULTS[game].get("coeff", 1.9)
             c = await _get_float(session, f"game_{game}_coeff", default)
             cfg["coeff_label"] = f"x{c:.4g}"
         configs[game] = cfg
@@ -105,7 +126,7 @@ async def _execute_game(
     db_user: User,
     game_type: str,
     bet: float,
-    dice_side: str | None = None,
+    game_side: str | None = None,
 ) -> tuple[bool, float, int]:
     """Send dice, evaluate result, update balance and record session.
     Returns (won, payout, dice_value). Bet must be deducted before calling."""
@@ -116,39 +137,69 @@ async def _execute_game(
     payout = 0.0
 
     if game_type == "football":
-        coeff = await _get_float(session, "game_football_coeff", 3.0)
-        if value == 5:
-            won, payout = True, round(bet * coeff, 2)
+        coeff_goal = await _get_float(session, "game_football_coeff_goal", 1.5)
+        coeff_miss = await _get_float(session, "game_football_coeff_miss", 2.2)
+        if value in (4, 5):  # goal
+            if game_side == "goal":
+                won, payout = True, round(bet * coeff_goal, 2)
+        else:  # miss (values 1-3)
+            if game_side == "miss":
+                won, payout = True, round(bet * coeff_miss, 2)
 
     elif game_type == "basketball":
-        coeff = await _get_float(session, "game_basketball_coeff", 2.5)
-        if value in (4, 5):
-            won, payout = True, round(bet * coeff, 2)
+        c_clean = await _get_float(session, "game_basketball_coeff_clean", 4.0)
+        c_any   = await _get_float(session, "game_basketball_coeff_any",   2.2)
+        c_stuck = await _get_float(session, "game_basketball_coeff_stuck", 4.0)
+        c_miss  = await _get_float(session, "game_basketball_coeff_miss",  1.5)
+        if value == 5:
+            won, payout = True,  round(bet * c_clean, 2)
+        elif value == 4:
+            won, payout = True,  round(bet * c_any,   2)
+        elif value == 3:
+            won, payout = False, round(bet * c_stuck, 2)  # stuck: pays but not a "win"
+        else:  # 1, 2
+            won, payout = False, round(bet * c_miss,  2)  # miss: pays but not a "win"
 
     elif game_type == "bowling":
-        coeff = await _get_float(session, "game_bowling_coeff", 4.0)
-        if value == 6:
-            won, payout = True, round(bet * coeff, 2)
+        c_strike = await _get_float(session, "game_bowling_coeff_strike", 5.0)
+        c_miss   = await _get_float(session, "game_bowling_coeff_miss",   4.0)
+        if value == 6:  # strike
+            if game_side == "strike":
+                won, payout = True, round(bet * c_strike, 2)
+        else:  # miss (values 1-5)
+            if game_side == "miss":
+                won, payout = True, round(bet * c_miss, 2)
 
     elif game_type == "dice":
         coeff = await _get_float(session, "game_dice_coeff", 1.9)
-        if (dice_side == "high" and value > 3) or (dice_side == "low" and value < 4):
+        if (game_side == "high" and value > 3) or (game_side == "low" and value < 4):
             won, payout = True, round(bet * coeff, 2)
 
     elif game_type == "slots":
-        # Telegram 🎰 values 1-64, formula: reel1*16 + reel2*4 + reel3 + 1
-        # Symbols: Bar=0, Grape=1, Lemon=2, Seven=3
-        # 3-of-a-kind: BAR=1, Grape=22, Lemon=43, 777=64
-        coeff_777 = await _get_float(session, "game_slots_coeff1", 3.0)    # 777 jackpot
-        coeff_fruits = await _get_float(session, "game_slots_coeff2", 2.0)  # 3 matching fruits
+        coeff_777    = await _get_float(session, "game_slots_coeff1", 10.0)
+        coeff_fruits = await _get_float(session, "game_slots_coeff2", 2.0)
         _FRUITS = {1, 22, 43}
         if value == 64:
             won, payout = True, round(bet * coeff_777, 2)
         elif value in _FRUITS:
             won, payout = True, round(bet * coeff_fruits, 2)
 
-    if won:
-        db_user.stars_balance += payout
+    elif game_type == "darts":
+        c_bullseye = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
+        c_red      = await _get_float(session, "game_darts_coeff_red",      1.8)
+        c_white    = await _get_float(session, "game_darts_coeff_white",    2.5)
+        c_bounce   = await _get_float(session, "game_darts_coeff_bounce",   5.0)
+        if value == 6:
+            won, payout = True,  round(bet * c_bullseye, 2)
+        elif value in (4, 5):
+            won, payout = False, round(bet * c_red,      2)
+        elif value in (2, 3):
+            won, payout = False, round(bet * c_white,    2)
+        else:  # 1
+            won, payout = False, round(bet * c_bounce,   2)
+
+    # Always apply payout (basketball/darts always give something; payout=0 for true losses)
+    db_user.stars_balance += payout
 
     session.add(GameSession(
         user_id=db_user.user_id,
@@ -172,39 +223,86 @@ def _result_text(
     payout: float,
     value: int,
     new_balance: float,
-    dice_side: str | None = None,
+    game_side: str | None = None,
 ) -> str:
     label = GAME_LABELS[game_type]
+    net = round(payout - bet, 2)
+    sign = "+" if net >= 0 else ""
 
-    desc_lines = {
-        "football":   "⚽ Гол!" if won else "⚽ Промах.",
-        "basketball": "🏀 Попадание!" if won else "🏀 Мимо.",
-        "bowling":    "🎳 Страйк!" if won else "🎳 Не страйк.",
-        "dice":       f"🎲 Выпало: <b>{value}</b> | {'📈 Больше 3' if dice_side == 'high' else '📉 Меньше 4'}",
-        "slots": (
-            "🎰 <b>777 — Джекпот! 🏆</b>" if value == 64
-            else ("🎰 <b>3 одинаковых — Выигрыш! 🍀</b>" if value in (1, 22, 43)
-                  else "🎰 Нет совпадений")
-        ),
-    }
+    if game_type == "football":
+        outcome = "⚽ Гол!" if value in (4, 5) else "🥅 Промах."
+        if won:
+            result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
+        else:
+            chose = "гол" if game_side == "goal" else "промах"
+            result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
 
-    if won:
-        profit = round(payout - bet, 2)
-        result_line = f"🎉 <b>Выигрыш! +{payout:.2f} ⭐</b>"
-        extra = f"Прибыль: +{profit:.2f} ⭐"
+    elif game_type == "basketball":
+        if value == 5:
+            outcome = "🏀 Чистый гол!"
+        elif value == 4:
+            outcome = "🏀 Гол!"
+        elif value == 3:
+            outcome = "😬 Застрял мяч..."
+        else:
+            outcome = "🏀 Промах."
+        if payout > 0:
+            result_line = f"{'🎉' if won else '📤'} <b>{'Выигрыш' if won else 'Возврат'}: +{payout:.2f} ⭐</b> ({sign}{net:.2f} ⭐)"
+        else:
+            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+
+    elif game_type == "bowling":
+        outcome = "🎳 Страйк!" if value == 6 else "🎳 Промах."
+        if won:
+            result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
+        else:
+            chose = "страйк" if game_side == "strike" else "промах"
+            result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
+
+    elif game_type == "dice":
+        outcome = f"🎲 Выпало: <b>{value}</b> | {'📈 Больше 3' if game_side == 'high' else '📉 Меньше 4'}"
+        if won:
+            result_line = f"🎉 <b>Выигрыш! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
+        else:
+            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+
+    elif game_type == "slots":
+        if value == 64:
+            outcome = "🎰 <b>777 — Джекпот! 🏆</b>"
+        elif value in (1, 22, 43):
+            outcome = "🎰 <b>3 одинаковых — Выигрыш! 🍀</b>"
+        else:
+            outcome = "🎰 Нет совпадений"
+        if won:
+            result_line = f"🎉 <b>Выигрыш! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
+        else:
+            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+
+    elif game_type == "darts":
+        if value == 6:
+            outcome = "🎯 Прямо в центр!"
+        elif value in (4, 5):
+            outcome = "🎯 Красный сектор."
+        elif value in (2, 3):
+            outcome = "🎯 Белый сектор."
+        else:
+            outcome = "🎯 Отскок дротика!"
+        if payout > 0:
+            result_line = f"{'🎉' if won else '📤'} <b>{'Выигрыш' if won else 'Возврат'}: +{payout:.2f} ⭐</b> ({sign}{net:.2f} ⭐)"
+        else:
+            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+
     else:
-        result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
-        extra = ""
+        outcome = ""
+        result_line = f"🎉 <b>+{payout:.2f} ⭐</b>" if won else f"😞 <b>-{bet:.2f} ⭐</b>"
 
     parts = [
         f"<b>{label}</b>",
         "",
-        desc_lines.get(game_type, ""),
+        outcome,
         result_line,
+        f"\n💰 Баланс: <b>{new_balance:.2f} ⭐</b>",
     ]
-    if extra:
-        parts.append(extra)
-    parts.append(f"\n💰 Баланс: <b>{new_balance:.2f} ⭐</b>")
     return "\n".join(parts)
 
 
@@ -235,9 +333,13 @@ async def cb_games_menu(
         await callback.answer()
         return
 
-    # Refund bet if user cancels during dice-side selection
+    # Refund bet if user cancels during side selection
     fsm_state = await state.get_state()
-    if fsm_state == GameStates.choose_dice_side:
+    if fsm_state in (
+        GameStates.choose_dice_side,
+        GameStates.choose_football_side,
+        GameStates.choose_bowling_side,
+    ):
         data = await state.get_data()
         bet = data.get("bet", 0.0)
         if bet:
@@ -380,7 +482,7 @@ async def msg_bet_enter(
     db_user.stars_balance -= bet
     await session.commit()
 
-    # Dice needs side selection first
+    # Games that need side selection first
     if game_type == "dice":
         await state.set_state(GameStates.choose_dice_side)
         await state.update_data(bet=bet)
@@ -390,6 +492,30 @@ async def msg_bet_enter(
             f"Выбери условие победы:",
             parse_mode="HTML",
             reply_markup=dice_side_kb(),
+        )
+        return
+
+    if game_type == "football":
+        await state.set_state(GameStates.choose_football_side)
+        await state.update_data(bet=bet)
+        await message.answer(
+            f"⚽ <b>Футбол</b>\n\n"
+            f"Ставка: <b>{bet:.0f} ⭐</b>\n\n"
+            f"Сделай ставку — мяч попадёт в ворота или нет?",
+            parse_mode="HTML",
+            reply_markup=football_side_kb(),
+        )
+        return
+
+    if game_type == "bowling":
+        await state.set_state(GameStates.choose_bowling_side)
+        await state.update_data(bet=bet)
+        await message.answer(
+            f"🎳 <b>Боулинг</b>\n\n"
+            f"Ставка: <b>{bet:.0f} ⭐</b>\n\n"
+            f"Поставь на страйк или промах:",
+            parse_mode="HTML",
+            reply_markup=bowling_side_kb(),
         )
         return
 
@@ -405,7 +531,6 @@ async def msg_bet_enter(
             bet=bet,
         )
     except Exception:
-        # Refund on send error
         db_user.stars_balance += bet
         await session.commit()
         await message.answer("⚠️ Ошибка при отправке игры. Ставка возвращена.", reply_markup=game_cancel_kb())
@@ -427,7 +552,7 @@ async def cb_dice_side(
     db_user: User,
     state: FSMContext,
 ) -> None:
-    dice_side = callback.data.split(":")[2]  # "high" or "low"
+    game_side = callback.data.split(":")[2]
     data = await state.get_data()
     bet = data["bet"]
     await state.clear()
@@ -440,7 +565,7 @@ async def cb_dice_side(
             db_user=db_user,
             game_type="dice",
             bet=bet,
-            dice_side=dice_side,
+            game_side=game_side,
         )
     except Exception:
         db_user.stars_balance += bet
@@ -450,8 +575,86 @@ async def cb_dice_side(
         return
 
     await callback.message.answer(
-        _result_text("dice", won, bet, payout, value, db_user.stars_balance, dice_side),
+        _result_text("dice", won, bet, payout, value, db_user.stars_balance, game_side),
         parse_mode="HTML",
         reply_markup=game_result_kb("dice"),
+    )
+    await callback.answer()
+
+
+# ─── Football: choose side ────────────────────────────────────────────────────
+
+@router.callback_query(GameStates.choose_football_side, lambda c: c.data and c.data.startswith("game:football:"))
+async def cb_football_side(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    db_user: User,
+    state: FSMContext,
+) -> None:
+    game_side = callback.data.split(":")[2]
+    data = await state.get_data()
+    bet = data["bet"]
+    await state.clear()
+
+    try:
+        won, payout, value = await _execute_game(
+            bot=callback.bot,
+            chat_id=callback.message.chat.id,
+            session=session,
+            db_user=db_user,
+            game_type="football",
+            bet=bet,
+            game_side=game_side,
+        )
+    except Exception:
+        db_user.stars_balance += bet
+        await session.commit()
+        await callback.message.answer("⚠️ Ошибка при отправке игры. Ставка возвращена.", reply_markup=game_cancel_kb())
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        _result_text("football", won, bet, payout, value, db_user.stars_balance, game_side),
+        parse_mode="HTML",
+        reply_markup=game_result_kb("football"),
+    )
+    await callback.answer()
+
+
+# ─── Bowling: choose side ─────────────────────────────────────────────────────
+
+@router.callback_query(GameStates.choose_bowling_side, lambda c: c.data and c.data.startswith("game:bowling:"))
+async def cb_bowling_side(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    db_user: User,
+    state: FSMContext,
+) -> None:
+    game_side = callback.data.split(":")[2]
+    data = await state.get_data()
+    bet = data["bet"]
+    await state.clear()
+
+    try:
+        won, payout, value = await _execute_game(
+            bot=callback.bot,
+            chat_id=callback.message.chat.id,
+            session=session,
+            db_user=db_user,
+            game_type="bowling",
+            bet=bet,
+            game_side=game_side,
+        )
+    except Exception:
+        db_user.stars_balance += bet
+        await session.commit()
+        await callback.message.answer("⚠️ Ошибка при отправке игры. Ставка возвращена.", reply_markup=game_cancel_kb())
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        _result_text("bowling", won, bet, payout, value, db_user.stars_balance, game_side),
+        parse_mode="HTML",
+        reply_markup=game_result_kb("bowling"),
     )
     await callback.answer()

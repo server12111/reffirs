@@ -1,7 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-GAME_TYPES = ["football", "basketball", "bowling", "dice", "slots"]
+GAME_TYPES = ["football", "basketball", "bowling", "dice", "slots", "darts"]
 
 GAME_LABELS = {
     "football":   "Футбол",
@@ -9,6 +9,7 @@ GAME_LABELS = {
     "bowling":    "Боулинг",
     "dice":       "Кубики",
     "slots":      "Слоты",
+    "darts":      "Дартс",
 }
 
 GAME_ICONS = {
@@ -17,6 +18,7 @@ GAME_ICONS = {
     "bowling":    "5370853837689070338",
     "dice":       "5384474763827620477",
     "slots":      "5915833712368424979",
+    "darts":      "5471952986970267163",
 }
 
 
@@ -36,8 +38,8 @@ def games_menu_kb(configs: dict) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="Лотерея", callback_data="game:lottery", style="primary", icon_custom_emoji_id="5431653802753159903"))
     builder.row(InlineKeyboardButton(text="Дуэль", callback_data="duel:menu", style="primary", icon_custom_emoji_id="5453991094435997597"))
     builder.row(
-        InlineKeyboardButton(text="🎡 Все или ничего", callback_data="menu:wheel", style="primary", icon_custom_emoji_id="5361993818373655559"),
-        InlineKeyboardButton(text="🎁 Кейсы", callback_data="menu:cases", style="primary", icon_custom_emoji_id="5427225953463972959"),
+        InlineKeyboardButton(text="Все или ничего", callback_data="menu:wheel", style="primary", icon_custom_emoji_id="5361993818373655559"),
+        InlineKeyboardButton(text="Кейсы", callback_data="menu:cases", style="primary", icon_custom_emoji_id="5427225953463972959"),
     )
     builder.row(InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
     return builder.as_markup()
@@ -48,6 +50,26 @@ def dice_side_kb() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="Больше 3", callback_data="game:dice:high", style="primary", icon_custom_emoji_id="5269460053651366623"),
         InlineKeyboardButton(text="Меньше 4", callback_data="game:dice:low", style="primary", icon_custom_emoji_id="5271811599785534382"),
+    )
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
+    return builder.as_markup()
+
+
+def football_side_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="Гол (x1.5)", callback_data="game:football:goal", style="success", icon_custom_emoji_id="5375159220280762629"),
+        InlineKeyboardButton(text="Промах (x2.2)", callback_data="game:football:miss", style="primary", icon_custom_emoji_id="5318991467639756533"),
+    )
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
+    return builder.as_markup()
+
+
+def bowling_side_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="Страйк (x5)", callback_data="game:bowling:strike", style="success", icon_custom_emoji_id="5370853837689070338"),
+        InlineKeyboardButton(text="Промах (x4)", callback_data="game:bowling:miss", style="primary", icon_custom_emoji_id="5318991467639756533"),
     )
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
     return builder.as_markup()

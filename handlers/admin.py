@@ -92,6 +92,7 @@ class AdminGameStates(StatesGroup):
     set_coeff = State()
     set_coeff1 = State()
     set_coeff2 = State()
+    set_coeff_outcome = State()
     set_min_bet = State()
     set_daily_limit = State()
     set_bet_step = State()
@@ -1594,11 +1595,12 @@ async def msg_bulk_channels(message: Message, state: FSMContext, session: AsyncS
 _GAME_LABELS_ADMIN = {
     "football":   "⚽ Футбол",
     "basketball": "🏀 Баскетбол",
+    "darts":      "🎯 Дартс",
     "bowling":    "🎳 Боулинг",
     "dice":       "🎲 Кубики",
     "slots":      "🎰 Слоты",
 }
-_GAME_TYPES_ADMIN = ["football", "basketball", "bowling", "dice", "slots"]
+_GAME_TYPES_ADMIN = ["football", "basketball", "bowling", "dice", "slots", "darts"]
 
 
 async def _get_game_float(session: AsyncSession, key: str, default: float) -> float:
@@ -1755,6 +1757,45 @@ async def cb_admin_game_bet_step(callback: CallbackQuery, state: FSMContext) -> 
         f"(1 = любая сумма, 5 = кратно 5, 10 = кратно 10 и т.д.)"
     )
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("agame:cg:"))
+async def cb_admin_game_coeff_outcome(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+    parts = callback.data.split(":")  # agame:cg:{game}:{outcome}
+    game = parts[2]
+    outcome = parts[3]
+    coeff_key = f"game_{game}_coeff_{outcome}"
+    label = f"{_GAME_LABELS_ADMIN.get(game, game)} / {outcome}"
+    await state.set_state(AdminGameStates.set_coeff_outcome)
+    await state.update_data(coeff_key=coeff_key, label=label)
+    await callback.message.edit_text(
+        f"📈 Введи коэффициент для <b>{label}</b> (например: 1.5):",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminGameStates.set_coeff_outcome)
+async def msg_admin_game_coeff_outcome(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    try:
+        val = float(message.text.strip().replace(",", "."))
+        if val <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи положительное число:")
+        return
+    data = await state.get_data()
+    await state.clear()
+    coeff_key = data["coeff_key"]
+    label = data["label"]
+    await set_setting(session, coeff_key, str(val))
+    await message.answer(
+        f"✅ Коэффициент <b>{label}</b> установлен: <b>x{val}</b>",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb(),
+    )
 
 
 @router.message(AdminGameStates.set_coeff)
