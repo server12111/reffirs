@@ -173,6 +173,9 @@ async def msg_captcha_answer(
 
         await session.commit()
 
+        from services.battlepass import after_withdrawal as _bp_after_wd
+        await _bp_after_wd(db_user, session, message.bot)
+
         # Get payments channel URL for the confirmation message
         pch_url_row = await session.get(BotSettings, "payments_channel_url")
         channel_url = pch_url_row.value if pch_url_row and pch_url_row.value else None

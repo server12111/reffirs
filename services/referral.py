@@ -81,6 +81,9 @@ async def grant_referral_reward_if_pending(
     user.referral_reward_pending = False
     await session.commit()
 
+    from services.battlepass import after_referral_granted
+    await after_referral_granted(referrer, session, bot)
+
     name = f"@{user.username}" if user.username else user.first_name
     try:
         await bot.send_message(

@@ -11,6 +11,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="Профиль", callback_data="menu:profile", style="primary", icon_custom_emoji_id="5373012449597335010"),
     )
     builder.row(InlineKeyboardButton(text="Задания", callback_data="menu:tasks", style="primary", icon_custom_emoji_id="5435970940670320222"))
+    builder.row(InlineKeyboardButton(text="🏆 Батл Пасс", callback_data="menu:battlepass", style="primary", icon_custom_emoji_id="5280769763398671636"))
     builder.row(
         InlineKeyboardButton(text="Топ", callback_data="menu:top", style="primary", icon_custom_emoji_id="5280769763398671636"),
         InlineKeyboardButton(text="Игры", callback_data="menu:games", style="primary", icon_custom_emoji_id="5350708744558753862"),

@@ -164,6 +164,10 @@ async def _resolve_duel(duel: Duel, session: AsyncSession, bot: Bot) -> None:
     duel.winner_id = winner_id
     await session.commit()
 
+    if winner:
+        from services.battlepass import after_duel_win
+        await after_duel_win(winner, session, bot)
+
     result_text = (
         f"🏆 <b>Дуэль #{duel.id} завершена!</b>\n\n"
         f"🎲 Броски: <b>{creator_roll}</b> vs <b>{joiner_roll}</b>\n"

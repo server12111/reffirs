@@ -22,6 +22,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    win_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    bowling_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class BotSettings(Base):
@@ -178,5 +180,13 @@ class SponsorEvent(Base):
     service: Mapped[str] = mapped_column(String(16))   # "subgram", "tgrass", "botohub"
     event_type: Mapped[str] = mapped_column(String(8)) # "show", "pass"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BattlePassCompletion(Base):
+    __tablename__ = "battle_pass_completions"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.user_id"), primary_key=True)
+    task_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

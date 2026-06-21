@@ -159,6 +159,9 @@ async def _execute_game(
     ))
     await session.commit()
 
+    from services.battlepass import after_game as _bp_after_game
+    await _bp_after_game(db_user, session, bot, game_type, "win" if won else "lose", bet, payout)
+
     return won, payout, value
 
 

@@ -129,6 +129,9 @@ async def _spin_and_send(
     await update_casino_profit(session, "wheel", bet, payout)
     await session.commit()
 
+    from services.battlepass import after_game as _bp_after_game
+    await _bp_after_game(user, session, bot, "wheel", "win" if payout > bet else "lose", bet, payout)
+
     # Determine video key
     video_key = "wheel_video_50x" if coeff == 50.0 else "wheel_video_01x"
     video_file_id = await get_setting(session, video_key, "")
