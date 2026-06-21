@@ -2689,10 +2689,10 @@ async def cb_admin_db_import(callback: CallbackQuery, state: FSMContext) -> None
     await state.set_state(AdminDBImportStates.waiting_file)
     await callback.answer()
     await callback.message.answer(
-        "📥 <b>Імпорт бази даних</b>\n\n"
-        "Надішліть JSON-файл бекапу.\n"
-        "⚠️ <b>Увага!</b> Всі поточні дані будуть замінені!\n\n"
-        "Для скасування надішліть /admin",
+        "📥 <b>Импорт базы данных</b>\n\n"
+        "Отправьте JSON-файл бекапа.\n"
+        "⚠️ <b>Внимание!</b> Все текущие данные будут заменены!\n\n"
+        "Для отмены отправьте /admin",
         parse_mode="HTML",
     )
 
@@ -2703,10 +2703,10 @@ async def msg_admin_db_import_file(message: Message, session: AsyncSession, stat
         return
 
     if not message.document or not message.document.file_name.endswith(".json"):
-        await message.answer("❌ Надішліть файл з розширенням .json")
+        await message.answer("❌ Отправьте файл с расширением .json")
         return
 
-    await message.answer("⏳ Обробляю файл...")
+    await message.answer("⏳ Обрабатываю файл...")
     await state.clear()
 
     try:
@@ -2803,7 +2803,7 @@ async def cb_integration_toggle(callback: CallbackQuery, session: AsyncSession) 
     await set_setting(session, db_key, new_val)
 
     label = _INTEGRATION_LABELS[key]
-    state_txt = "увімкнено ✅" if new_val == "1" else "вимкнено ❌"
+    state_txt = "включено ✅" if new_val == "1" else "отключено ❌"
     await callback.answer(f"{label}: {state_txt}", show_alert=False)
     await cb_integrations(callback, session)
 

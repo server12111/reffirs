@@ -312,7 +312,7 @@ async def cb_task_admin_added(callback: CallbackQuery, state: FSMContext, bot: B
         return
     await state.set_state(UserTaskCreateStates.reward)
     await safe_edit(callback, _reward_prompt(channel_id), None)
-    await callback.answer("✅ Бот доданий як адмін!")
+    await callback.answer("✅ Бот добавлен как админ!")
 
 
 @router.message(UserTaskCreateStates.reward)

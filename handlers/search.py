@@ -77,7 +77,7 @@ async def cb_search_sponsors_check(
             if member.status in ("left", "kicked"):
                 not_subscribed.append(s["title"])
         except Exception:
-            pass  # можем не перевіряти — пропускаємо
+            pass  # можно не проверять — пропускаем
 
     if not_subscribed:
         await callback.answer(

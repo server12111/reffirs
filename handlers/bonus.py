@@ -47,7 +47,7 @@ def _build_sponsor_wall_kb(sponsors: list) -> InlineKeyboardMarkup:
 
 @router.callback_query(lambda c: c.data == "menu:bonus")
 async def cb_bonus(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
-    # Перевірка підписки на кастомних спонсорів
+    # Проверка подписки на кастомных спонсоров
     sponsors_row = await session.get(BotSettings, "sponsor_channels")
     sponsors = json.loads(sponsors_row.value) if sponsors_row and sponsors_row.value and sponsors_row.value.strip() else []
     if sponsors:
@@ -114,7 +114,7 @@ async def cb_sponsors_check_bonus(callback: CallbackQuery, session: AsyncSession
             pass
         return
 
-    # Всі підписані — видаємо бонус
+    # Все подписаны — выдаём бонус
     cooldown_row = await session.get(BotSettings, "bonus_cooldown_hours")
     cooldown_hours = int(float(cooldown_row.value)) if cooldown_row else config.BONUS_COOLDOWN_HOURS
     now = datetime.utcnow()
