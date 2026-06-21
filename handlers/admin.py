@@ -1647,11 +1647,41 @@ async def cb_admin_game_info(callback: CallbackQuery, session: AsyncSession) -> 
     daily_limit = int(daily_limit_row.value) if daily_limit_row else 0
 
     if game_type == "slots":
-        c1 = await _get_game_float(session, "game_slots_coeff1", 5.0)
+        c1 = await _get_game_float(session, "game_slots_coeff1", 10.0)
         c2 = await _get_game_float(session, "game_slots_coeff2", 2.0)
-        coeff_line = f"📈 Коэф. Tier 1 (1–3): <b>x{c1}</b>\n📈 Коэф. Tier 2 (4–10): <b>x{c2}</b>"
+        coeff_line = f"📈 777 Джекпот: <b>x{c1}</b>\n📈 3 фрукта: <b>x{c2}</b>"
+    elif game_type == "football":
+        cg = await _get_game_float(session, "game_football_coeff_goal", 1.5)
+        cm = await _get_game_float(session, "game_football_coeff_miss", 2.2)
+        coeff_line = f"⚽ Гол: <b>x{cg}</b>\n🥅 Промах: <b>x{cm}</b>"
+    elif game_type == "basketball":
+        cc = await _get_game_float(session, "game_basketball_coeff_clean", 4.0)
+        ca = await _get_game_float(session, "game_basketball_coeff_any",   2.2)
+        cs = await _get_game_float(session, "game_basketball_coeff_stuck", 4.0)
+        cmi = await _get_game_float(session, "game_basketball_coeff_miss", 1.5)
+        coeff_line = (
+            f"🏀 Чистый гол: <b>x{cc}</b>\n"
+            f"🏀 Любой гол: <b>x{ca}</b>\n"
+            f"🏀 Застрял: <b>x{cs}</b>\n"
+            f"🏀 Промах: <b>x{cmi}</b>"
+        )
+    elif game_type == "bowling":
+        cstr = await _get_game_float(session, "game_bowling_coeff_strike", 5.0)
+        cmi  = await _get_game_float(session, "game_bowling_coeff_miss",   4.0)
+        coeff_line = f"🎳 Страйк: <b>x{cstr}</b>\n🎳 Промах: <b>x{cmi}</b>"
+    elif game_type == "darts":
+        cb = await _get_game_float(session, "game_darts_coeff_bullseye", 5.0)
+        cr = await _get_game_float(session, "game_darts_coeff_red",      1.8)
+        cw = await _get_game_float(session, "game_darts_coeff_white",    2.5)
+        cbo = await _get_game_float(session, "game_darts_coeff_bounce",  5.0)
+        coeff_line = (
+            f"🎯 В центр: <b>x{cb}</b>\n"
+            f"🎯 Красный: <b>x{cr}</b>\n"
+            f"🎯 Белый: <b>x{cw}</b>\n"
+            f"🎯 Отскок: <b>x{cbo}</b>"
+        )
     else:
-        coeff = await _get_game_float(session, f"game_{game_type}_coeff", 1.0)
+        coeff = await _get_game_float(session, f"game_{game_type}_coeff", 1.9)
         coeff_line = f"📈 Коэффициент: <b>x{coeff}</b>"
 
     status_text = "✅ Включена" if is_enabled else "❌ Отключена"
