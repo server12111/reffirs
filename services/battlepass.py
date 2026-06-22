@@ -156,7 +156,7 @@ async def check_and_grant(
             current_task = task
             break
 
-    if current_task is None or current_task["id"] not in task_ids:
+    if current_task is None:
         return
 
     progress = await get_task_progress(user, session, current_task["type"], **kwargs)

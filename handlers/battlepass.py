@@ -6,13 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import BattlePassCompletion, User
 from handlers.button_helper import answer_with_content
 from keyboards.battlepass import battlepass_kb, battlepass_top_kb
-from services.battlepass import TASKS, get_task_progress
+from services.battlepass import TASKS, get_task_progress, check_and_grant
 
 router = Router()
 
 
 @router.callback_query(lambda c: c.data == "menu:battlepass")
 async def cb_battlepass(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
+    # Check if current active task is already met (e.g. conditions were satisfied before check ran)
+    try:
+        await check_and_grant(db_user, session, callback.bot, [])
+    except Exception:
+        pass
+
     completed_ids = set(
         row[0] for row in (await session.execute(
             select(BattlePassCompletion.task_id).where(
