@@ -193,16 +193,13 @@ async def _execute_game(
     elif game_type == "darts":
         c_bullseye = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
         c_red      = await _get_float(session, "game_darts_coeff_red",      1.8)
-        c_white    = await _get_float(session, "game_darts_coeff_white",    2.5)
         c_bounce   = await _get_float(session, "game_darts_coeff_bounce",   5.0)
         if value == 6:
             if game_side == "center":
                 won, payout = True, round(bet * c_bullseye, 2)
                 db_user.darts_bullseye_count = (db_user.darts_bullseye_count or 0) + 1
-        elif value in (3, 4, 5):  # red rings (inner area)
+        elif value in (2, 3, 4, 5):  # any ring hit = red
             if game_side == "red":    won, payout = True, round(bet * c_red,     2)
-        elif value == 2:              # white ring (outer)
-            if game_side == "white":  won, payout = True, round(bet * c_white,   2)
         else:  # 1 — bounce
             if game_side == "bounce": won, payout = True, round(bet * c_bounce,  2)
 
@@ -297,13 +294,11 @@ def _result_text(
     elif game_type == "darts":
         if value == 6:
             outcome = "🎯 Прямо в центр!"
-        elif value in (3, 4, 5):
+        elif value in (2, 3, 4, 5):
             outcome = "🎯 Красный сектор."
-        elif value == 2:
-            outcome = "🎯 Белый сектор."
         else:
             outcome = "🎯 Отскок дротика!"
-        _dsides = {"center": "центр", "red": "красный", "white": "белый", "bounce": "отскок"}
+        _dsides = {"center": "центр", "red": "красный", "bounce": "отскок"}
         chose = _dsides.get(game_side, game_side or "")
         if won:
             result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
