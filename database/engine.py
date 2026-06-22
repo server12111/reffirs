@@ -4,8 +4,21 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from database.models import ButtonContent, BotSettings
 
-_db_path = os.environ.get("DATABASE_PATH") or os.path.join(os.path.dirname(__file__), "..", "database.db")
-_db_path = os.path.abspath(_db_path)
+
+def _resolve_db_path() -> str:
+    # Explicit env var always wins (set DATABASE_PATH in your hosting env)
+    env = os.environ.get("DATABASE_PATH", "").strip()
+    if env:
+        return os.path.abspath(env)
+    # Auto-detect persistent volume mounts used by Railway, Render, Fly.io, etc.
+    for candidate in ("/data/database.db", "/var/data/database.db"):
+        if os.path.isdir(os.path.dirname(candidate)):
+            return candidate
+    # Default: project directory (works fine on a VPS with persistent filesystem)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "database.db"))
+
+
+_db_path = _resolve_db_path()
 DATABASE_URL = f"sqlite+aiosqlite:///{_db_path}"
 
 engine = create_async_engine(DATABASE_URL, echo=False)

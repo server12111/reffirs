@@ -49,7 +49,8 @@ def _gen_captcha() -> tuple[int, int]:
 
 
 @router.callback_query(lambda c: c.data == "menu:withdraw")
-async def cb_withdraw(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
+async def cb_withdraw(callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext) -> None:
+    await state.clear()
     if not db_user.username:
         await answer_with_content(
             callback, session, "menu:withdraw",
