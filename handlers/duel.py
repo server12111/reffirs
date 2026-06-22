@@ -243,7 +243,7 @@ async def msg_duel_amount(
 
     await state.clear()
     db_user.stars_balance -= amount
-    expires_at = datetime.utcnow() + timedelta(days=365)
+    expires_at = datetime.utcnow() + timedelta(minutes=DUEL_EXPIRE_MINUTES)
     duel = Duel(creator_id=db_user.user_id, amount=amount, expires_at=expires_at)
     session.add(duel)
     await session.flush()
