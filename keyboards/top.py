@@ -6,6 +6,7 @@ def top_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Топ по рефералам", callback_data="top:type:refs", style="primary", icon_custom_emoji_id="5325533093673588447"))
     builder.row(InlineKeyboardButton(text="Топ по звёздам", callback_data="top:type:stars", style="primary", icon_custom_emoji_id="5438496463044752972"))
+    builder.row(InlineKeyboardButton(text="Топ Батл Пасс", callback_data="menu:battlepass:top", style="primary", icon_custom_emoji_id="5361993818373655559"))
     builder.row(InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
     return builder.as_markup()
 
