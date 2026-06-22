@@ -52,7 +52,10 @@ async def cb_battlepass(callback: CallbackQuery, session: AsyncSession, db_user:
                 f"   [{bar}] {capped}/{target} — <b>{reward_str}</b>"
             )
         else:
-            lines.append(f"🔒 <b>{reward_str}</b>")
+            if task.get("super"):
+                lines.append("🔒 <b>Супер задание</b>")
+            else:
+                lines.append("🔒 Задание недоступно")
 
     done = len(completed_ids)
     total = len(TASKS)

@@ -22,7 +22,7 @@ def withdraw_amounts_kb() -> InlineKeyboardMarkup:
         builder.add(InlineKeyboardButton(text=f"{amount} ⭐", callback_data=f"withdraw:{amount}", style="primary", icon_custom_emoji_id="5438496463044752972"))
     builder.adjust(2)
     builder.row(InlineKeyboardButton(
-        text="Подарки — 65 ⭐", callback_data="withdraw:gift",
+        text="Удаленные подарки — 65 ⭐", callback_data="withdraw:gift",
         style="primary", icon_custom_emoji_id="5224628072619216265",
     ))
     builder.row(InlineKeyboardButton(text="Назад", callback_data="menu:main", style="danger", icon_custom_emoji_id="5318991467639756533"))
