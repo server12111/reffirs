@@ -62,7 +62,7 @@ async def cancel_referral_no_sponsors(
 
 
 async def grant_referral_reward_if_pending(
-    user: User, session: AsyncSession, bot: Bot
+    user: User, session: AsyncSession, bot: Bot, is_premium: bool = False
 ) -> None:
     """Stage 2: give reward to referrer after new user passes subscription wall."""
     if not user.referral_reward_pending or not user.referrer_id:
@@ -79,10 +79,12 @@ async def grant_referral_reward_if_pending(
     referrer.referrals_count += 1
     referrer.stars_balance += reward
     user.referral_reward_pending = False
+    if is_premium:
+        referrer.premium_referrals_count = (referrer.premium_referrals_count or 0) + 1
     await session.commit()
 
     from services.battlepass import after_referral_granted
-    await after_referral_granted(referrer, session, bot)
+    await after_referral_granted(referrer, session, bot, is_premium=is_premium)
 
     name = f"@{user.username}" if user.username else user.first_name
     try:

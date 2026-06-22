@@ -18,7 +18,7 @@ GAME_ICONS = {
     "bowling":    "5370853837689070338",
     "dice":       "5384474763827620477",
     "slots":      "5915833712368424979",
-    "darts":      "5471952986970267163",
+    "darts":      "5310278924616356636",
 }
 
 
@@ -65,11 +65,39 @@ def football_side_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def basketball_side_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="Чистый гол (x4)", callback_data="game:basketball:clean", style="success", icon_custom_emoji_id="5384088040677319401"),
+        InlineKeyboardButton(text="Любой гол (x2.2)", callback_data="game:basketball:any", style="primary", icon_custom_emoji_id="5384088040677319401"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="Застрял (x4)", callback_data="game:basketball:stuck", style="primary", icon_custom_emoji_id="5384088040677319401"),
+        InlineKeyboardButton(text="Промах (x1.5)", callback_data="game:basketball:miss", style="danger", icon_custom_emoji_id="5318991467639756533"),
+    )
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
+    return builder.as_markup()
+
+
 def bowling_side_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="Страйк (x5)", callback_data="game:bowling:strike", style="success", icon_custom_emoji_id="5370853837689070338"),
         InlineKeyboardButton(text="Промах (x4)", callback_data="game:bowling:miss", style="primary", icon_custom_emoji_id="5318991467639756533"),
+    )
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
+    return builder.as_markup()
+
+
+def darts_side_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="В центр (x5)", callback_data="game:darts:center", style="success", icon_custom_emoji_id="5310278924616356636"),
+        InlineKeyboardButton(text="Красный (x1.8)", callback_data="game:darts:red", style="primary", icon_custom_emoji_id="5310278924616356636"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="Белый (x2.5)", callback_data="game:darts:white", style="primary", icon_custom_emoji_id="5310278924616356636"),
+        InlineKeyboardButton(text="Отскок (x5)", callback_data="game:darts:bounce", style="danger", icon_custom_emoji_id="5310278924616356636"),
     )
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
     return builder.as_markup()

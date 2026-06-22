@@ -29,7 +29,10 @@ async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> No
     if result["completed"] or result["skip"]:
         db_user = await session.get(User, callback.from_user.id)
         if db_user and db_user.referral_reward_pending:
-            await grant_referral_reward_if_pending(db_user, session, callback.bot)
+            await grant_referral_reward_if_pending(
+                db_user, session, callback.bot,
+                is_premium=callback.from_user.is_premium or False,
+            )
 
         ad_sent = await show_botohub_views(callback.from_user.id)
         if ad_sent:
@@ -135,7 +138,10 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
 
     db_user = await session.get(User, user_id)
     if db_user and db_user.referral_reward_pending:
-        await grant_referral_reward_if_pending(db_user, session, callback.bot)
+        await grant_referral_reward_if_pending(
+            db_user, session, callback.bot,
+            is_premium=callback.from_user.is_premium or False,
+        )
 
     ad_sent = await show_botohub_views(user_id)
     if ad_sent:

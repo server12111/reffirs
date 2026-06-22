@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import User, Withdrawal, BotSettings
 from handlers.button_helper import answer_with_content, safe_edit
 from utils.emoji import pe
-from keyboards.withdraw import withdraw_amounts_kb, captcha_cancel_kb, withdraw_success_kb
+from keyboards.withdraw import withdraw_amounts_kb, captcha_cancel_kb, withdraw_success_kb, gift_type_kb
 from keyboards.admin import withdrawal_actions_kb
 from keyboards.main import back_to_menu_kb, main_menu_kb
 from config import config
@@ -19,6 +19,8 @@ router = Router()
 
 CAPTCHA_LOCKOUT_MINUTES = 10
 _captcha_lockouts: dict[int, datetime] = {}
+
+GIFT_AMOUNT = 65
 
 
 def build_withdrawal_msg(withdrawal_id: int, username: str, user_id: int, amount: float, status: str) -> str:
@@ -37,6 +39,7 @@ def build_withdrawal_msg(withdrawal_id: int, username: str, user_id: int, amount
 
 class WithdrawStates(StatesGroup):
     captcha = State()
+    choose_gift = State()
 
 
 def _gen_captcha() -> tuple[int, int]:
@@ -101,6 +104,58 @@ async def cb_withdraw_amount(callback: CallbackQuery, db_user: User, state: FSMC
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "withdraw:gift")
+async def cb_withdraw_gift(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
+    if not db_user.username:
+        await callback.answer("❗ Для вывода нужен username в Telegram.", show_alert=True)
+        return
+
+    if db_user.stars_balance < GIFT_AMOUNT:
+        await callback.answer(
+            f"❌ Недостаточно звёзд. Нужно {GIFT_AMOUNT} ⭐, у вас {db_user.stars_balance:.2f} ⭐",
+            show_alert=True,
+        )
+        return
+
+    locked_until = _captcha_lockouts.get(db_user.user_id)
+    if locked_until and datetime.utcnow() < locked_until:
+        remaining = locked_until - datetime.utcnow()
+        minutes = int(remaining.total_seconds() // 60) + 1
+        await callback.answer(f"⛔ Попробуйте через {minutes} мин.", show_alert=True)
+        return
+
+    await state.set_state(WithdrawStates.choose_gift)
+    await safe_edit(
+        callback,
+        f"🎁 <b>Вывод подарка</b>\n\n"
+        f"Стоимость: <b>{GIFT_AMOUNT} ⭐</b>\n\n"
+        f"Выбери подарок, который хочешь получить:",
+        gift_type_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(WithdrawStates.choose_gift, lambda c: c.data and c.data.startswith("withdraw:giftselect:"))
+async def cb_gift_selected(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
+    emoji_id = callback.data.split(":", 2)[2]
+
+    a, b = _gen_captcha()
+    await state.set_state(WithdrawStates.captcha)
+    await state.update_data(
+        withdraw_amount=GIFT_AMOUNT,
+        gift_emoji_id=emoji_id,
+        captcha_a=a, captcha_b=b, captcha_attempts=0,
+    )
+
+    await safe_edit(
+        callback,
+        f"🛡 <b>Подтвердите, что вы не бот.</b>\n\n"
+        f"Сколько будет:\n<b>{a} + {b} = ?</b>",
+        captcha_cancel_kb(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data == "withdraw:cancel")
 async def cb_captcha_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
@@ -120,6 +175,7 @@ async def msg_captcha_answer(
     b = fsm_data["captcha_b"]
     amount = fsm_data["withdraw_amount"]
     attempts = fsm_data.get("captcha_attempts", 0)
+    gift_emoji_id = fsm_data.get("gift_emoji_id")
 
     try:
         answer = int(message.text.strip())
@@ -136,17 +192,28 @@ async def msg_captcha_answer(
 
         db_user.stars_balance -= amount
         withdrawal = Withdrawal(user_id=db_user.user_id, amount=amount)
+        if gift_emoji_id:
+            withdrawal.gift_emoji_id = gift_emoji_id
         session.add(withdrawal)
         await session.flush()
 
-        # Admin channel: simple message with buttons
-        admin_text = (
-            f"💸 <b>Новая заявка #{withdrawal.id}</b>\n\n"
-            f"👤 @{db_user.username} | ID: <code>{db_user.user_id}</code>\n"
-            f"💰 Сумма: <b>{amount} ⭐</b>\n\n"
-            f"🔗 iOS: <code>tg://user?id={db_user.user_id}</code>\n"
-            f"🔗 Android: https://t.me/{db_user.username}"
-        )
+        # Admin channel notification
+        if gift_emoji_id:
+            admin_text = (
+                f'🎁 <b>Запрос на вывод подарка #{withdrawal.id}</b>\n\n'
+                f'👤 @{db_user.username} | ID: <code>{db_user.user_id}</code>\n'
+                f'🎁 Подарок: <tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>\n\n'
+                f'🔗 iOS: <code>tg://user?id={db_user.user_id}</code>\n'
+                f'🔗 Android: https://t.me/{db_user.username}'
+            )
+        else:
+            admin_text = (
+                f"💸 <b>Новая заявка #{withdrawal.id}</b>\n\n"
+                f"👤 @{db_user.username} | ID: <code>{db_user.user_id}</code>\n"
+                f"💰 Сумма: <b>{amount} ⭐</b>\n\n"
+                f"🔗 iOS: <code>tg://user?id={db_user.user_id}</code>\n"
+                f"🔗 Android: https://t.me/{db_user.username}"
+            )
         try:
             sent = await message.bot.send_message(
                 chat_id=config.ADMIN_CHANNEL_ID,
@@ -158,7 +225,7 @@ async def msg_captcha_answer(
         except Exception:
             pass
 
-        # Payments channel: formatted message with status for users
+        # Payments channel
         pch_row = await session.get(BotSettings, "payments_channel_id")
         if pch_row and pch_row.value:
             try:
@@ -176,11 +243,9 @@ async def msg_captcha_answer(
         from services.battlepass import after_withdrawal as _bp_after_wd
         await _bp_after_wd(db_user, session, message.bot)
 
-        # Get payments channel URL for the confirmation message
         pch_url_row = await session.get(BotSettings, "payments_channel_url")
         channel_url = pch_url_row.value if pch_url_row and pch_url_row.value else None
 
-        # If no explicit URL, auto-build from payments_channel_id (@username)
         if not channel_url:
             pch_id_row = await session.get(BotSettings, "payments_channel_id")
             if pch_id_row and pch_id_row.value:
@@ -188,11 +253,23 @@ async def msg_captcha_answer(
                 if ch_id.startswith("@"):
                     channel_url = f"https://t.me/{ch_id[1:]}"
 
+        if gift_emoji_id:
+            confirm_text = (
+                f'✅ <b>Заявка #{withdrawal.id} принята!</b>\n\n'
+                f'Подарок: <tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>\n'
+                f'Стоимость: <b>{amount} ⭐</b>\n'
+                f'Статус: ⏳ На рассмотрении\n\n'
+                f'Одобренные выплаты публикуются в нашем канале 👇'
+            )
+        else:
+            confirm_text = (
+                f"✅ <b>Заявка #{withdrawal.id} принята!</b>\n\n"
+                f"Сумма: <b>{amount} ⭐</b>\n"
+                f"Статус: ⏳ На рассмотрении\n\n"
+                f"Одобренные выплаты публикуются в нашем канале 👇"
+            )
         await message.answer(
-            f"✅ <b>Заявка #{withdrawal.id} принята!</b>\n\n"
-            f"Сумма: <b>{amount} ⭐</b>\n"
-            f"Статус: ⏳ На рассмотрении\n\n"
-            f"Одобренные выплаты публикуются в нашем канале 👇",
+            confirm_text,
             parse_mode="HTML",
             reply_markup=withdraw_success_kb(channel_url),
         )
@@ -216,5 +293,3 @@ async def msg_captcha_answer(
                 parse_mode="HTML",
                 reply_markup=captcha_cancel_kb(),
             )
-
-

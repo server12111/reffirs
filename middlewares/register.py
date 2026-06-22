@@ -161,7 +161,10 @@ class CombinedWallMiddleware(BaseMiddleware):
             if db_user and db_user.referral_reward_pending:
                 bot = data.get("bot") or getattr(event, "bot", None)
                 if bot:
-                    await grant_referral_reward_if_pending(db_user, session, bot)
+                    await grant_referral_reward_if_pending(
+                        db_user, session, bot,
+                        is_premium=getattr(user, "is_premium", False) or False,
+                    )
 
         return await handler(event, data)
 

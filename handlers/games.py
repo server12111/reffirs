@@ -11,6 +11,7 @@ from database.models import User, GameSession, BotSettings
 from handlers.button_helper import answer_with_content, safe_edit
 from keyboards.games import (
     games_menu_kb, dice_side_kb, football_side_kb, bowling_side_kb,
+    basketball_side_kb, darts_side_kb,
     game_result_kb, game_cancel_kb,
     GAME_TYPES, GAME_LABELS,
 )
@@ -40,7 +41,9 @@ class GameStates(StatesGroup):
     enter_bet = State()
     choose_dice_side = State()
     choose_football_side = State()
+    choose_basketball_side = State()
     choose_bowling_side = State()
+    choose_darts_side = State()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -152,13 +155,13 @@ async def _execute_game(
         c_stuck = await _get_float(session, "game_basketball_coeff_stuck", 4.0)
         c_miss  = await _get_float(session, "game_basketball_coeff_miss",  1.5)
         if value == 5:
-            won, payout = True,  round(bet * c_clean, 2)
+            if game_side == "clean": won, payout = True, round(bet * c_clean, 2)
         elif value == 4:
-            won, payout = True,  round(bet * c_any,   2)
+            if game_side == "any":   won, payout = True, round(bet * c_any,   2)
         elif value == 3:
-            won, payout = False, round(bet * c_stuck, 2)  # stuck: pays but not a "win"
+            if game_side == "stuck": won, payout = True, round(bet * c_stuck, 2)
         else:  # 1, 2
-            won, payout = False, round(bet * c_miss,  2)  # miss: pays but not a "win"
+            if game_side == "miss":  won, payout = True, round(bet * c_miss,  2)
 
     elif game_type == "bowling":
         c_strike = await _get_float(session, "game_bowling_coeff_strike", 5.0)
@@ -181,6 +184,7 @@ async def _execute_game(
         _FRUITS = {1, 22, 43}
         if value == 64:
             won, payout = True, round(bet * coeff_777, 2)
+            db_user.slots_777_count = (db_user.slots_777_count or 0) + 1
         elif value in _FRUITS:
             won, payout = True, round(bet * coeff_fruits, 2)
 
@@ -190,16 +194,18 @@ async def _execute_game(
         c_white    = await _get_float(session, "game_darts_coeff_white",    2.5)
         c_bounce   = await _get_float(session, "game_darts_coeff_bounce",   5.0)
         if value == 6:
-            won, payout = True,  round(bet * c_bullseye, 2)
+            if game_side == "center":
+                won, payout = True, round(bet * c_bullseye, 2)
+                db_user.darts_bullseye_count = (db_user.darts_bullseye_count or 0) + 1
         elif value in (4, 5):
-            won, payout = False, round(bet * c_red,      2)
+            if game_side == "red":    won, payout = True, round(bet * c_red,     2)
         elif value in (2, 3):
-            won, payout = False, round(bet * c_white,    2)
+            if game_side == "white":  won, payout = True, round(bet * c_white,   2)
         else:  # 1
-            won, payout = False, round(bet * c_bounce,   2)
+            if game_side == "bounce": won, payout = True, round(bet * c_bounce,  2)
 
-    # Always apply payout (basketball/darts always give something; payout=0 for true losses)
-    db_user.stars_balance += payout
+    if won:
+        db_user.stars_balance += payout
 
     session.add(GameSession(
         user_id=db_user.user_id,
@@ -246,10 +252,12 @@ def _result_text(
             outcome = "😬 Застрял мяч..."
         else:
             outcome = "🏀 Промах."
-        if payout > 0:
-            result_line = f"{'🎉' if won else '📤'} <b>{'Выигрыш' if won else 'Возврат'}: +{payout:.2f} ⭐</b> ({sign}{net:.2f} ⭐)"
+        _sides = {"clean": "чистый гол", "any": "любой гол", "stuck": "застрял", "miss": "промах"}
+        chose = _sides.get(game_side, game_side or "")
+        if won:
+            result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
         else:
-            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+            result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
 
     elif game_type == "bowling":
         outcome = "🎳 Страйк!" if value == 6 else "🎳 Промах."
@@ -287,10 +295,12 @@ def _result_text(
             outcome = "🎯 Белый сектор."
         else:
             outcome = "🎯 Отскок дротика!"
-        if payout > 0:
-            result_line = f"{'🎉' if won else '📤'} <b>{'Выигрыш' if won else 'Возврат'}: +{payout:.2f} ⭐</b> ({sign}{net:.2f} ⭐)"
+        _dsides = {"center": "центр", "red": "красный", "white": "белый", "bounce": "отскок"}
+        chose = _dsides.get(game_side, game_side or "")
+        if won:
+            result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
         else:
-            result_line = f"😞 <b>Проигрыш. -{bet:.2f} ⭐</b>"
+            result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
 
     else:
         outcome = ""
@@ -338,7 +348,9 @@ async def cb_games_menu(
     if fsm_state in (
         GameStates.choose_dice_side,
         GameStates.choose_football_side,
+        GameStates.choose_basketball_side,
         GameStates.choose_bowling_side,
+        GameStates.choose_darts_side,
     ):
         data = await state.get_data()
         bet = data.get("bet", 0.0)
@@ -507,6 +519,18 @@ async def msg_bet_enter(
         )
         return
 
+    if game_type == "basketball":
+        await state.set_state(GameStates.choose_basketball_side)
+        await state.update_data(bet=bet)
+        await message.answer(
+            f"🏀 <b>Баскетбол</b>\n\n"
+            f"Ставка: <b>{bet:.0f} ⭐</b>\n\n"
+            f"Поставь на исход броска:",
+            parse_mode="HTML",
+            reply_markup=basketball_side_kb(),
+        )
+        return
+
     if game_type == "bowling":
         await state.set_state(GameStates.choose_bowling_side)
         await state.update_data(bet=bet)
@@ -516,6 +540,18 @@ async def msg_bet_enter(
             f"Поставь на страйк или промах:",
             parse_mode="HTML",
             reply_markup=bowling_side_kb(),
+        )
+        return
+
+    if game_type == "darts":
+        await state.set_state(GameStates.choose_darts_side)
+        await state.update_data(bet=bet)
+        await message.answer(
+            f"🎯 <b>Дартс</b>\n\n"
+            f"Ставка: <b>{bet:.0f} ⭐</b>\n\n"
+            f"Поставь на зону попадания:",
+            parse_mode="HTML",
+            reply_markup=darts_side_kb(),
         )
         return
 
@@ -656,5 +692,83 @@ async def cb_bowling_side(
         _result_text("bowling", won, bet, payout, value, db_user.stars_balance, game_side),
         parse_mode="HTML",
         reply_markup=game_result_kb("bowling"),
+    )
+    await callback.answer()
+
+
+# ─── Basketball: choose side ──────────────────────────────────────────────────
+
+@router.callback_query(GameStates.choose_basketball_side, lambda c: c.data and c.data.startswith("game:basketball:"))
+async def cb_basketball_side(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    db_user: User,
+    state: FSMContext,
+) -> None:
+    game_side = callback.data.split(":")[2]
+    data = await state.get_data()
+    bet = data["bet"]
+    await state.clear()
+
+    try:
+        won, payout, value = await _execute_game(
+            bot=callback.bot,
+            chat_id=callback.message.chat.id,
+            session=session,
+            db_user=db_user,
+            game_type="basketball",
+            bet=bet,
+            game_side=game_side,
+        )
+    except Exception:
+        db_user.stars_balance += bet
+        await session.commit()
+        await callback.message.answer("⚠️ Ошибка при отправке игры. Ставка возвращена.", reply_markup=game_cancel_kb())
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        _result_text("basketball", won, bet, payout, value, db_user.stars_balance, game_side),
+        parse_mode="HTML",
+        reply_markup=game_result_kb("basketball"),
+    )
+    await callback.answer()
+
+
+# ─── Darts: choose side ───────────────────────────────────────────────────────
+
+@router.callback_query(GameStates.choose_darts_side, lambda c: c.data and c.data.startswith("game:darts:"))
+async def cb_darts_side(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    db_user: User,
+    state: FSMContext,
+) -> None:
+    game_side = callback.data.split(":")[2]
+    data = await state.get_data()
+    bet = data["bet"]
+    await state.clear()
+
+    try:
+        won, payout, value = await _execute_game(
+            bot=callback.bot,
+            chat_id=callback.message.chat.id,
+            session=session,
+            db_user=db_user,
+            game_type="darts",
+            bet=bet,
+            game_side=game_side,
+        )
+    except Exception:
+        db_user.stars_balance += bet
+        await session.commit()
+        await callback.message.answer("⚠️ Ошибка при отправке игры. Ставка возвращена.", reply_markup=game_cancel_kb())
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        _result_text("darts", won, bet, payout, value, db_user.stars_balance, game_side),
+        parse_mode="HTML",
+        reply_markup=game_result_kb("darts"),
     )
     await callback.answer()

@@ -24,6 +24,9 @@ class User(Base):
     last_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     win_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     bowling_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    premium_referrals_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    darts_bullseye_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    slots_777_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class BotSettings(Base):
@@ -67,6 +70,7 @@ class Withdrawal(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     channel_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payments_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gift_emoji_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class Task(Base):
