@@ -165,7 +165,10 @@ def withdrawal_actions_kb(withdrawal_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="✅ Принять", callback_data=f"withdrawal:approve:{withdrawal_id}"),
                 InlineKeyboardButton(text="❌ Отклонить", callback_data=f"withdrawal:reject:{withdrawal_id}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text="📊 Статистика", callback_data=f"withdrawal:stats:{withdrawal_id}"),
+            ],
         ]
     )
 

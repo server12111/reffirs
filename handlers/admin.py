@@ -1252,6 +1252,58 @@ async def cb_withdrawal_noreturn(callback: CallbackQuery, session: AsyncSession,
         pass
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("withdrawal:stats:"))
+async def cb_withdrawal_stats(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("Нет доступа.", show_alert=True)
+
+    withdrawal_id = int(callback.data.split(":")[2])
+    withdrawal = await session.get(Withdrawal, withdrawal_id)
+    if not withdrawal:
+        return await callback.answer("Заявка не найдена.", show_alert=True)
+
+    user = await session.get(User, withdrawal.user_id)
+    if not user:
+        return await callback.answer("Пользователь не найден.", show_alert=True)
+
+    total_joined = (await session.execute(
+        select(func.count(User.user_id)).where(User.referrer_id == user.user_id)
+    )).scalar() or 0
+
+    referral_ids = (await session.execute(
+        select(User.user_id).where(User.referrer_id == user.user_id)
+    )).scalars().all()
+
+    avg_sponsors = 0.0
+    if referral_ids:
+        sub_total = (await session.execute(
+            select(func.count(TaskCompletion.id))
+            .join(Task, Task.id == TaskCompletion.task_id)
+            .where(
+                TaskCompletion.user_id.in_(referral_ids),
+                Task.task_type == "subscribe",
+            )
+        )).scalar() or 0
+        avg_sponsors = round(sub_total / total_joined, 2) if total_joined else 0.0
+
+    confirmed = user.referrals_count or 0
+    premium = user.premium_referrals_count or 0
+    pending = total_joined - confirmed
+    avg_pct = f"{round(confirmed / total_joined * 100)}%" if total_joined else "—"
+
+    name = f"@{user.username}" if user.username else user.first_name
+    text = (
+        f"📊 Рефералы {name}\n\n"
+        f"👥 Перешли по ссылке: {total_joined}\n"
+        f"✅ Подписались на спонсоров: {confirmed}\n"
+        f"⏳ Не прошли: {pending}\n"
+        f"⭐ Премиум: {premium}\n\n"
+        f"📈 Конверсия: {avg_pct}\n"
+        f"📣 Среднее подписок на спонсора: {avg_sponsors}"
+    )
+    await callback.answer(text, show_alert=True)
+
+
 # ─── Tasks: Management ───────────────────────────────────────────────────────
 
 @router.callback_query(lambda c: c.data == "admin:tasks")
