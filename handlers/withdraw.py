@@ -200,10 +200,12 @@ async def msg_captcha_answer(
 
         # Admin channel notification
         if gift_emoji_id:
+            from keyboards.withdraw import _GIFT_EMOJI_IDS as _GEI
+            gift_num = (_GEI.index(gift_emoji_id) + 1) if gift_emoji_id in _GEI else "?"
             admin_text = (
                 f'🎁 <b>Запрос на вывод подарка #{withdrawal.id}</b>\n\n'
                 f'👤 @{db_user.username} | ID: <code>{db_user.user_id}</code>\n'
-                f'🎁 Подарок: <tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>\n\n'
+                f'🎁 Подарок #{gift_num}: <tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>\n\n'
                 f'🔗 iOS: <code>tg://user?id={db_user.user_id}</code>\n'
                 f'🔗 Android: https://t.me/{db_user.username}'
             )
@@ -227,6 +229,8 @@ async def msg_captcha_answer(
             pass
 
         if gift_emoji_id:
+            # Try sticker first, then fall back to standalone emoji message
+            sticker_sent = False
             try:
                 stickers = await message.bot.get_custom_emoji_stickers([gift_emoji_id])
                 if stickers:
@@ -234,8 +238,18 @@ async def msg_captcha_answer(
                         chat_id=config.ADMIN_CHANNEL_ID,
                         sticker=stickers[0].file_id,
                     )
+                    sticker_sent = True
             except Exception:
                 pass
+            if not sticker_sent:
+                try:
+                    await message.bot.send_message(
+                        chat_id=config.ADMIN_CHANNEL_ID,
+                        text=f'<tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>',
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
 
         # Payments channel
         pch_row = await session.get(BotSettings, "payments_channel_id")

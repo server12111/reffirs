@@ -31,9 +31,9 @@ def withdraw_amounts_kb() -> InlineKeyboardMarkup:
 
 def gift_type_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for emoji_id in _GIFT_EMOJI_IDS:
+    for i, emoji_id in enumerate(_GIFT_EMOJI_IDS, start=1):
         builder.button(
-            text=" ",
+            text=str(i),
             callback_data=f"withdraw:giftselect:{emoji_id}",
             style="primary",
             icon_custom_emoji_id=emoji_id,
