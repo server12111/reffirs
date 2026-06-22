@@ -40,12 +40,13 @@ async def cb_battlepass(callback: CallbackQuery, session: AsyncSession, db_user:
             capped = min(progress, target)
             pct = int(capped / target * 10)
             bar = "█" * pct + "░" * (10 - pct)
+            super_badge = "\n   🌟 <b>Супер задание!</b>" if task.get("super") else ""
             lines.append(
-                f"🔓 <b>{task['title']}</b>\n"
+                f"🔓 <b>{task['title']}</b>{super_badge}\n"
                 f"   [{bar}] {capped}/{target} — <b>{reward_str}</b>"
             )
         else:
-            lines.append(f"🔒 {task['title']} — <b>{reward_str}</b>")
+            lines.append(f"🔒 <b>{reward_str}</b>")
 
     done = len(completed_ids)
     total = len(TASKS)

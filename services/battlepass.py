@@ -19,7 +19,7 @@ TASKS = [
     {"id": 10, "title": "Накопить баланс 50 ⭐",                 "reward":  3.0, "type": "balance",            "target": 50},
     {"id": 11, "title": "Сыграть в кубики 25 раз",              "reward":  3.0, "type": "dice_plays",         "target": 25},
     {"id": 12, "title": "Крутнуть спин 11 раз",                 "reward":  2.0, "type": "wheel_plays",        "target": 11},
-    {"id": 13, "title": "Сделать 100 бросков кубиков",          "reward": 20.0, "type": "dice_plays",         "target": 100},
+    {"id": 13, "title": "Сделать 100 бросков кубиков",          "reward": 20.0, "type": "dice_plays",         "target": 100, "super": True},
     {"id": 14, "title": "Забить 50 голов",                       "reward":  5.0, "type": "football_wins",      "target": 50},
     {"id": 15, "title": "Попасть в центр в дартсе",             "reward":  2.0, "type": "darts_bullseye",     "target": 1},
     {"id": 16, "title": "Получить 3 выигрыша подряд",           "reward":  4.0, "type": "win_streak",         "target": 3},
@@ -27,12 +27,12 @@ TASKS = [
     {"id": 18, "title": "Выбить две шестёрки подряд",           "reward":  5.0, "type": "bowling_streak",     "target": 2},
     {"id": 19, "title": "Выбить 10 раз промах в боулинге",      "reward":  3.0, "type": "bowling_losses",     "target": 10},
     {"id": 20, "title": "Пригласить 5 пользователей с Премиум", "reward":  1.0, "type": "premium_referrals",  "target": 5},
-    {"id": 21, "title": "Выбить 777 в слотах",                  "reward": 20.0, "type": "slots_777",          "target": 1},
+    {"id": 21, "title": "Выбить 777 в слотах",                  "reward": 20.0, "type": "slots_777",          "target": 1,   "super": True},
     {"id": 22, "title": "Проиграть 50 ⭐ за 1 ставку",          "reward":  1.0, "type": "single_bet_loss",    "target": 50},
-    {"id": 23, "title": "Крутнуть спин 1 раз",                  "reward": 40.0, "type": "wheel_plays",        "target": 1},
+    {"id": 23, "title": "Крутнуть спин 1 раз",                  "reward": 40.0, "type": "wheel_plays",        "target": 1,   "super": True},
     {"id": 24, "title": "Сделать ставку 20 ⭐",                 "reward":  2.0, "type": "single_bet_amount",  "target": 20},
     {"id": 25, "title": "Сыграть в футбол 35 раз",              "reward":  4.0, "type": "football_plays",     "target": 35},
-    {"id": 26, "title": "Накопить баланс 250 ⭐",               "reward": 20.0, "type": "balance",            "target": 250},
+    {"id": 26, "title": "Накопить баланс 250 ⭐",               "reward": 20.0, "type": "balance",            "target": 250, "super": True},
 ]
 
 ALL_TASKS_BONUS = 30.0
@@ -198,13 +198,15 @@ async def check_and_grant(
 async def after_game(
     user: User, session: AsyncSession, bot: Bot,
     game_type: str, result: str, bet: float, payout: float,
+    *, dice_value: int | None = None,
 ) -> None:
     new_win_streak = ((user.win_streak or 0) + 1) if result == "win" else 0
     user.win_streak = new_win_streak
 
     new_bowling_streak = user.bowling_streak or 0
     if game_type == "bowling":
-        new_bowling_streak = (new_bowling_streak + 1) if result == "win" else 0
+        is_strike = dice_value == 6
+        new_bowling_streak = (new_bowling_streak + 1) if is_strike else 0
         user.bowling_streak = new_bowling_streak
 
     await session.commit()
