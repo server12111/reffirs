@@ -9,7 +9,6 @@ from keyboards.cases import cases_menu_kb, case_confirm_kb, case_result_kb
 
 router = Router()
 
-_MIN_REFS = 3
 _TIER_NAMES = {1: "Бронза", 3: "Серебро", 5: "Золото"}
 
 
@@ -17,12 +16,6 @@ _TIER_NAMES = {1: "Бронза", 3: "Серебро", 5: "Золото"}
 
 @router.callback_query(lambda c: c.data == "menu:cases")
 async def cb_cases_menu(callback: CallbackQuery, db_user: User) -> None:
-    if db_user.referrals_count < _MIN_REFS:
-        await callback.answer(
-            f"❌ Нужно минимум {_MIN_REFS} реферала.\nТвоих: {db_user.referrals_count}/{_MIN_REFS}",
-            show_alert=True,
-        )
-        return
     text = (
         "🎁 <b>Кейсы</b>\n\n"
         "Открой кейс и получи приз!\n\n"

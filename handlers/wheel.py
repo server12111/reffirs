@@ -11,8 +11,6 @@ from keyboards.wheel import wheel_menu_kb, wheel_bet_kb, wheel_cancel_kb, wheel_
 
 router = Router()
 
-_MIN_REFS = 3
-
 
 class WheelStates(StatesGroup):
     entering_bet = State()
@@ -23,12 +21,6 @@ class WheelStates(StatesGroup):
 @router.callback_query(lambda c: c.data == "menu:wheel")
 async def cb_wheel_menu(callback: CallbackQuery, session: AsyncSession, db_user: User, state: FSMContext) -> None:
     await state.clear()
-    if db_user.referrals_count < _MIN_REFS:
-        await callback.answer(
-            f"❌ Нужно минимум {_MIN_REFS} реферала.\nТвоих: {db_user.referrals_count}/{_MIN_REFS}",
-            show_alert=True,
-        )
-        return
     text = (
         "🎡 <b>Все или ничего</b>\n\n"
         "Два исхода:\n"

@@ -228,6 +228,18 @@ async def msg_captcha_answer(
         except Exception:
             pass
 
+        # Send gift as sticker to channel so admin sees the actual emoji
+        if gift_emoji_id:
+            try:
+                stickers = await message.bot.get_custom_emoji_stickers([gift_emoji_id])
+                if stickers:
+                    await message.bot.send_sticker(
+                        chat_id=config.ADMIN_CHANNEL_ID,
+                        sticker=stickers[0].file_id,
+                    )
+            except Exception:
+                pass
+
         # Send premium emoji to admin DMs (renders correctly in private chats unlike channels)
         if gift_emoji_id and config.ADMIN_IDS:
             for admin_id in config.ADMIN_IDS:
