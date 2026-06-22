@@ -228,24 +228,16 @@ async def msg_captcha_answer(
         except Exception:
             pass
 
-        if gift_emoji_id:
-            # Try sticker first, then fall back to standalone emoji message
-            sticker_sent = False
-            try:
-                stickers = await message.bot.get_custom_emoji_stickers([gift_emoji_id])
-                if stickers:
-                    await message.bot.send_sticker(
-                        chat_id=config.ADMIN_CHANNEL_ID,
-                        sticker=stickers[0].file_id,
-                    )
-                    sticker_sent = True
-            except Exception:
-                pass
-            if not sticker_sent:
+        # Send premium emoji to admin DMs (renders correctly in private chats unlike channels)
+        if gift_emoji_id and config.ADMIN_IDS:
+            for admin_id in config.ADMIN_IDS:
                 try:
                     await message.bot.send_message(
-                        chat_id=config.ADMIN_CHANNEL_ID,
-                        text=f'<tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>',
+                        chat_id=admin_id,
+                        text=(
+                            f'🎁 <b>Заявка #{withdrawal.id}</b> — подарок:\n'
+                            f'<tg-emoji emoji-id="{gift_emoji_id}">🎁</tg-emoji>'
+                        ),
                         parse_mode="HTML",
                     )
                 except Exception:

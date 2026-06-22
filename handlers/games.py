@@ -316,18 +316,6 @@ def _result_text(
     return "\n".join(parts)
 
 
-_MIN_REFS = 3
-
-
-def _refs_gate_text(refs: int) -> str:
-    return (
-        f"❌ <b>Доступ закрыт</b>\n\n"
-        f"Для игр нужно пригласить минимум <b>{_MIN_REFS} реферала</b>.\n"
-        f"Твоих рефералов: <b>{refs}/{_MIN_REFS}</b>\n\n"
-        f"Пригласи друзей по реферальной ссылке!"
-    )
-
-
 # ─── Games menu ───────────────────────────────────────────────────────────────
 
 @router.callback_query(lambda c: c.data == "menu:games")
@@ -337,12 +325,6 @@ async def cb_games_menu(
     db_user: User,
     state: FSMContext,
 ) -> None:
-    if db_user.referrals_count < _MIN_REFS:
-        from keyboards.main import back_to_menu_kb
-        await callback.message.edit_text(_refs_gate_text(db_user.referrals_count), parse_mode="HTML", reply_markup=back_to_menu_kb())
-        await callback.answer()
-        return
-
     # Refund bet if user cancels during side selection
     fsm_state = await state.get_state()
     if fsm_state in (
@@ -389,13 +371,6 @@ async def cb_game_play(
 
     if game_type not in GAME_TYPES:
         await callback.answer("Неизвестная игра.", show_alert=True)
-        return
-
-    if db_user.referrals_count < _MIN_REFS:
-        await callback.answer(
-            f"❌ Нужно минимум {_MIN_REFS} реферала.\nТвоих: {db_user.referrals_count}/{_MIN_REFS}",
-            show_alert=True,
-        )
         return
 
     if not await _is_enabled(session, game_type):
