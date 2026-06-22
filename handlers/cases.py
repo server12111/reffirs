@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, GameSession
 from database.engine import get_setting
+from handlers.button_helper import safe_edit
 from services.casino import get_case_outcome, update_casino_profit, CASE_PRIZES
 from keyboards.cases import cases_menu_kb, case_confirm_kb, case_result_kb
 
@@ -23,7 +24,7 @@ async def cb_cases_menu(callback: CallbackQuery, db_user: User) -> None:
         "🥈 <b>Серебро (3⭐)</b> — призы до 5⭐\n"
         "🥇 <b>Золото (5⭐)</b> — призы до 9⭐\n"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=cases_menu_kb())
+    await safe_edit(callback, text, cases_menu_kb())
     await callback.answer()
 
 

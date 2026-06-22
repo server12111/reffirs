@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, GameSession
 from database.engine import get_setting
+from handlers.button_helper import safe_edit
 from services.casino import get_wheel_outcome, update_casino_profit
 from keyboards.wheel import wheel_menu_kb, wheel_bet_kb, wheel_cancel_kb, wheel_result_kb
 
@@ -28,7 +29,7 @@ async def cb_wheel_menu(callback: CallbackQuery, session: AsyncSession, db_user:
         "• <b>50x</b> — джекпот!\n\n"
         "Выбери ставку и испытай удачу!"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=wheel_menu_kb())
+    await safe_edit(callback, text, wheel_menu_kb())
     await callback.answer()
 
 

@@ -4,7 +4,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import BattlePassCompletion, User
-from handlers.button_helper import answer_with_content
+from handlers.button_helper import answer_with_content, safe_edit
 from keyboards.battlepass import battlepass_kb, battlepass_top_kb
 from services.battlepass import TASKS, get_task_progress, check_and_grant
 
@@ -97,7 +97,7 @@ async def cb_battlepass_top(callback: CallbackQuery, session: AsyncSession) -> N
                 lines.append(f"{medal} {name} — <b>{cnt} {word}</b>")
 
         text = "\n".join(lines)
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=battlepass_top_kb())
+        await safe_edit(callback, text, battlepass_top_kb())
     except Exception:
         pass
     await callback.answer()
