@@ -19,7 +19,7 @@ def wheel_bet_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for amt in [1, 5, 10, 25, 50]:
         builder.button(
-            text=f"{amt} ⭐", callback_data=f"wheel:bet:{amt}",
+            text=f"{amt}", callback_data=f"wheel:bet:{amt}",
             style="primary", icon_custom_emoji_id="5438496463044752972",
         )
     builder.adjust(3, 2)

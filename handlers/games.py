@@ -30,7 +30,7 @@ GAME_EMOJIS = {
 GAME_DEFAULTS = {
     "football":   {"coeff_goal": 1.5, "coeff_miss": 2.2, "min_bet": 1.0, "daily_limit": 0},
     "basketball": {"coeff_clean": 4.0, "coeff_any": 2.2, "coeff_stuck": 4.0, "coeff_miss": 1.5, "min_bet": 1.0, "daily_limit": 0},
-    "bowling":    {"coeff_strike": 5.0, "coeff_miss": 4.0, "min_bet": 1.0, "daily_limit": 0},
+    "bowling":    {"coeff_strike": 5.0, "coeff_partial": 2.0, "coeff_miss": 4.0, "min_bet": 1.0, "daily_limit": 0},
     "dice":       {"coeff": 1.5, "min_bet": 1.0, "daily_limit": 0},
     "slots":      {"coeff1": 10.0, "coeff2": 2.0, "min_bet": 1.0, "daily_limit": 0},
     "darts":      {"coeff_bullseye": 5.0, "coeff_red": 1.8, "coeff_white": 2.5, "coeff_bounce": 5.0, "min_bet": 1.0, "daily_limit": 0},
@@ -111,9 +111,9 @@ async def _load_games_config(session: AsyncSession) -> dict:
             hi = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
             cfg["coeff_label"] = f"x{lo:.4g}–x{hi:.4g}"
         elif game == "bowling":
-            cs = await _get_float(session, "game_bowling_coeff_strike", 5.0)
-            cm = await _get_float(session, "game_bowling_coeff_miss", 4.0)
-            cfg["coeff_label"] = f"Страйк x{cs:.4g} / Промах x{cm:.4g}"
+            cs = await _get_float(session, "game_bowling_coeff_strike",  5.0)
+            cp = await _get_float(session, "game_bowling_coeff_partial", 2.0)
+            cfg["coeff_label"] = f"x{cp:.4g}–x{cs:.4g}"
         else:
             default = GAME_DEFAULTS[game].get("coeff", 1.9)
             c = await _get_float(session, f"game_{game}_coeff", default)
@@ -155,23 +155,25 @@ async def _execute_game(
         c_stuck = await _get_float(session, "game_basketball_coeff_stuck", 4.0)
         c_miss  = await _get_float(session, "game_basketball_coeff_miss",  1.5)
         if value == 5:
-            if game_side == "clean": won, payout = True, round(bet * c_clean, 2)
+            if game_side == "clean":   won, payout = True, round(bet * c_clean, 2)
+            elif game_side == "any":   won, payout = True, round(bet * c_any,   2)
         elif value == 4:
-            if game_side == "any":   won, payout = True, round(bet * c_any,   2)
+            if game_side == "any":     won, payout = True, round(bet * c_any,   2)
         elif value == 3:
-            if game_side == "stuck": won, payout = True, round(bet * c_stuck, 2)
+            if game_side == "stuck":   won, payout = True, round(bet * c_stuck, 2)
         else:  # 1, 2
-            if game_side == "miss":  won, payout = True, round(bet * c_miss,  2)
+            if game_side == "miss":    won, payout = True, round(bet * c_miss,  2)
 
     elif game_type == "bowling":
-        c_strike = await _get_float(session, "game_bowling_coeff_strike", 5.0)
-        c_miss   = await _get_float(session, "game_bowling_coeff_miss",   4.0)
+        c_strike  = await _get_float(session, "game_bowling_coeff_strike",  5.0)
+        c_partial = await _get_float(session, "game_bowling_coeff_partial", 2.0)
+        c_miss    = await _get_float(session, "game_bowling_coeff_miss",    4.0)
         if value == 6:  # strike
-            if game_side == "strike":
-                won, payout = True, round(bet * c_strike, 2)
-        else:  # miss (values 1-5)
-            if game_side == "miss":
-                won, payout = True, round(bet * c_miss, 2)
+            if game_side == "strike":   won, payout = True, round(bet * c_strike,  2)
+        elif value in (3, 4, 5):  # partial hit
+            if game_side == "partial":  won, payout = True, round(bet * c_partial, 2)
+        else:  # 1, 2 — miss
+            if game_side == "miss":     won, payout = True, round(bet * c_miss,    2)
 
     elif game_type == "dice":
         coeff = await _get_float(session, "game_dice_coeff", 1.9)
@@ -197,11 +199,11 @@ async def _execute_game(
             if game_side == "center":
                 won, payout = True, round(bet * c_bullseye, 2)
                 db_user.darts_bullseye_count = (db_user.darts_bullseye_count or 0) + 1
-        elif value in (4, 5):
+        elif value in (3, 5):  # red rings (alternating: white-red-white-red from outside)
             if game_side == "red":    won, payout = True, round(bet * c_red,     2)
-        elif value in (2, 3):
+        elif value in (2, 4):  # white rings
             if game_side == "white":  won, payout = True, round(bet * c_white,   2)
-        else:  # 1
+        else:  # 1 — bounce
             if game_side == "bounce": won, payout = True, round(bet * c_bounce,  2)
 
     if won:
@@ -260,11 +262,17 @@ def _result_text(
             result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
 
     elif game_type == "bowling":
-        outcome = "🎳 Страйк!" if value == 6 else "🎳 Промах."
+        if value == 6:
+            outcome = "🎳 Страйк! Все кегли сбиты!"
+        elif value in (3, 4, 5):
+            outcome = "🎳 Попал — несколько кеглей сбито."
+        else:
+            outcome = "🎳 Промах."
+        _bsides = {"strike": "страйк", "partial": "попал", "miss": "промах"}
+        chose = _bsides.get(game_side, game_side or "")
         if won:
             result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
         else:
-            chose = "страйк" if game_side == "strike" else "промах"
             result_line = f"😞 <b>Не угадал.</b> Поставил на {chose} — -{bet:.2f} ⭐"
 
     elif game_type == "dice":
@@ -289,9 +297,9 @@ def _result_text(
     elif game_type == "darts":
         if value == 6:
             outcome = "🎯 Прямо в центр!"
-        elif value in (4, 5):
+        elif value in (3, 5):
             outcome = "🎯 Красный сектор."
-        elif value in (2, 3):
+        elif value in (2, 4):
             outcome = "🎯 Белый сектор."
         else:
             outcome = "🎯 Отскок дротика!"

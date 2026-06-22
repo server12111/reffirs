@@ -83,8 +83,9 @@ def bowling_side_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="Страйк (x5)", callback_data="game:bowling:strike", style="success", icon_custom_emoji_id="5370853837689070338"),
-        InlineKeyboardButton(text="Промах (x4)", callback_data="game:bowling:miss", style="primary", icon_custom_emoji_id="5318991467639756533"),
+        InlineKeyboardButton(text="Промах (x4)", callback_data="game:bowling:miss", style="danger", icon_custom_emoji_id="5318991467639756533"),
     )
+    builder.row(InlineKeyboardButton(text="Попал (x2)", callback_data="game:bowling:partial", style="primary", icon_custom_emoji_id="5370853837689070338"))
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))
     return builder.as_markup()
 

@@ -33,7 +33,7 @@ def gift_type_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for emoji_id in _GIFT_EMOJI_IDS:
         builder.button(
-            text="🎁",
+            text=" ",
             callback_data=f"withdraw:giftselect:{emoji_id}",
             style="primary",
             icon_custom_emoji_id=emoji_id,
