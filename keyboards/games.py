@@ -94,7 +94,6 @@ def darts_side_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="В центр (x5)", callback_data="game:darts:center", style="success", icon_custom_emoji_id="5310278924616356636"),
-        InlineKeyboardButton(text="Красный (x1.8)", callback_data="game:darts:red", style="primary", icon_custom_emoji_id="5310278924616356636"),
         InlineKeyboardButton(text="Отскок (x5)", callback_data="game:darts:bounce", style="danger", icon_custom_emoji_id="5310278924616356636"),
     )
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="menu:games", style="danger", icon_custom_emoji_id="5210952531676504517"))

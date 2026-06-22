@@ -192,15 +192,12 @@ async def _execute_game(
 
     elif game_type == "darts":
         c_bullseye = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
-        c_red      = await _get_float(session, "game_darts_coeff_red",      1.8)
         c_bounce   = await _get_float(session, "game_darts_coeff_bounce",   5.0)
         if value == 6:
             if game_side == "center":
                 won, payout = True, round(bet * c_bullseye, 2)
                 db_user.darts_bullseye_count = (db_user.darts_bullseye_count or 0) + 1
-        elif value in (2, 3, 4, 5):  # any ring hit = red
-            if game_side == "red":    won, payout = True, round(bet * c_red,     2)
-        else:  # 1 — bounce
+        elif value == 1:  # bounce
             if game_side == "bounce": won, payout = True, round(bet * c_bounce,  2)
 
     if won:
