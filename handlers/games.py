@@ -107,9 +107,8 @@ async def _load_games_config(session: AsyncSession) -> dict:
             hi = await _get_float(session, "game_basketball_coeff_clean", 4.0)
             cfg["coeff_label"] = f"x{lo:.4g}–x{hi:.4g}"
         elif game == "darts":
-            lo = await _get_float(session, "game_darts_coeff_red", 1.8)
             hi = await _get_float(session, "game_darts_coeff_bullseye", 5.0)
-            cfg["coeff_label"] = f"x{lo:.4g}–x{hi:.4g}"
+            cfg["coeff_label"] = f"x{hi:.4g}"
         elif game == "bowling":
             cs = await _get_float(session, "game_bowling_coeff_strike",  5.0)
             cp = await _get_float(session, "game_bowling_coeff_partial", 2.0)
@@ -291,11 +290,11 @@ def _result_text(
     elif game_type == "darts":
         if value == 6:
             outcome = "🎯 Прямо в центр!"
-        elif value in (2, 3, 4, 5):
-            outcome = "🎯 Красный сектор."
-        else:
+        elif value == 1:
             outcome = "🎯 Отскок дротика!"
-        _dsides = {"center": "центр", "red": "красный", "bounce": "отскок"}
+        else:
+            outcome = "🎯 Мимо!"
+        _dsides = {"center": "центр", "bounce": "отскок"}
         chose = _dsides.get(game_side, game_side or "")
         if won:
             result_line = f"🎉 <b>Угадал! +{payout:.2f} ⭐</b> (чистая прибыль: {sign}{net:.2f} ⭐)"
