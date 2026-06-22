@@ -11,6 +11,7 @@ from sqlalchemy import select, func, delete
 from datetime import date as _date
 
 from database.models import User, PromoCode, PromoUse, Withdrawal, BotSettings, Task, TaskCompletion, GameSession, ButtonContent, Transfer, Duel, Lottery, LotteryTicket, SponsorEvent
+from database import init_db
 from handlers.withdraw import build_withdrawal_msg
 from database.engine import set_setting, get_button_content, set_button_photo, set_button_text
 from keyboards.admin import (
@@ -2789,6 +2790,7 @@ async def msg_admin_db_import_file(message: Message, session: AsyncSession, stat
                 session.add(model(**converted))
 
         await session.commit()
+        await init_db()
         await message.answer("✅ <b>Импорт успешен!</b>\nБаза данных восстановлена.", parse_mode="HTML")
     except Exception as e:
         await session.rollback()
