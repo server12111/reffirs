@@ -179,11 +179,14 @@ async def check_and_grant(
 
     msg = (
         f'🏆 <b>Батл Пасс — задание выполнено!</b>\n\n'
-        f'{current_task["title"]}\n\n'
+        f'✅ {current_task["title"]}\n'
         f'<b>+{current_task["reward"]:.0f} ⭐</b> зачислено на баланс!'
     )
     if next_task:
-        msg += f'\n\n🔓 Следующее задание: <b>{next_task["title"]}</b>'
+        msg += (
+            f'\n\n🔓 Следующее задание: <b>{next_task["title"]}</b>\n'
+            f'💰 Награда: <b>+{next_task["reward"]:.0f} ⭐</b>'
+        )
     else:
         msg += f'\n\n🎉 <b>Все задания выполнены! Бонус: +{ALL_TASKS_BONUS:.0f} ⭐</b>'
     try:

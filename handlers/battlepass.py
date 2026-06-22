@@ -1,11 +1,11 @@
 from aiogram import Router
 from aiogram.types import CallbackQuery
-from sqlalchemy import select
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import BattlePassCompletion, User
 from handlers.button_helper import answer_with_content
-from keyboards.battlepass import battlepass_kb
+from keyboards.battlepass import battlepass_kb, battlepass_top_kb
 from services.battlepass import TASKS, get_task_progress
 
 router = Router()
@@ -55,4 +55,36 @@ async def cb_battlepass(callback: CallbackQuery, session: AsyncSession, db_user:
 
     text = "\n".join(lines)
     await answer_with_content(callback, session, "menu:battlepass", text, battlepass_kb())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "menu:battlepass:top")
+async def cb_battlepass_top(callback: CallbackQuery, session: AsyncSession) -> None:
+    rows = (await session.execute(
+        select(BattlePassCompletion.user_id, func.count(BattlePassCompletion.task_id).label("cnt"))
+        .group_by(BattlePassCompletion.user_id)
+        .order_by(desc("cnt"))
+        .limit(10)
+    )).all()
+
+    lines = ["🏆 <b>Топ Батл Пасс</b>\n"]
+    medals = ["🥇", "🥈", "🥉"]
+
+    if not rows:
+        lines.append("Пока нет выполненных заданий.")
+    else:
+        for i, (user_id, cnt) in enumerate(rows, start=1):
+            user = await session.get(User, user_id)
+            if user and user.username:
+                name = f"@{user.username}"
+            elif user and user.first_name:
+                name = user.first_name
+            else:
+                name = f"#{user_id}"
+            medal = medals[i - 1] if i <= 3 else f"{i}."
+            word = "задание" if cnt == 1 else ("задания" if 2 <= cnt <= 4 else "заданий")
+            lines.append(f"{medal} {name} — <b>{cnt} {word}</b>")
+
+    text = "\n".join(lines)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=battlepass_top_kb())
     await callback.answer()

@@ -223,16 +223,19 @@ async def msg_captcha_answer(
                 reply_markup=withdrawal_actions_kb(withdrawal.id),
             )
             withdrawal.channel_message_id = sent.message_id
-            if gift_emoji_id:
+        except Exception:
+            pass
+
+        if gift_emoji_id:
+            try:
                 stickers = await message.bot.get_custom_emoji_stickers([gift_emoji_id])
                 if stickers:
                     await message.bot.send_sticker(
                         chat_id=config.ADMIN_CHANNEL_ID,
                         sticker=stickers[0].file_id,
-                        reply_to_message_id=sent.message_id,
                     )
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         # Payments channel
         pch_row = await session.get(BotSettings, "payments_channel_id")

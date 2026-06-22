@@ -170,9 +170,9 @@ async def _execute_game(
         c_miss    = await _get_float(session, "game_bowling_coeff_miss",    4.0)
         if value == 6:  # strike
             if game_side == "strike":   won, payout = True, round(bet * c_strike,  2)
-        elif value in (3, 4, 5):  # partial hit
+        elif value in (2, 3, 4, 5):  # any pin knocked — partial
             if game_side == "partial":  won, payout = True, round(bet * c_partial, 2)
-        else:  # 1, 2 — miss
+        else:  # 1 only — gutter ball
             if game_side == "miss":     won, payout = True, round(bet * c_miss,    2)
 
     elif game_type == "dice":
@@ -199,9 +199,9 @@ async def _execute_game(
             if game_side == "center":
                 won, payout = True, round(bet * c_bullseye, 2)
                 db_user.darts_bullseye_count = (db_user.darts_bullseye_count or 0) + 1
-        elif value in (3, 5):  # red rings (alternating: white-red-white-red from outside)
+        elif value in (3, 4, 5):  # red rings (inner area)
             if game_side == "red":    won, payout = True, round(bet * c_red,     2)
-        elif value in (2, 4):  # white rings
+        elif value == 2:              # white ring (outer)
             if game_side == "white":  won, payout = True, round(bet * c_white,   2)
         else:  # 1 — bounce
             if game_side == "bounce": won, payout = True, round(bet * c_bounce,  2)
@@ -264,7 +264,7 @@ def _result_text(
     elif game_type == "bowling":
         if value == 6:
             outcome = "🎳 Страйк! Все кегли сбиты!"
-        elif value in (3, 4, 5):
+        elif value in (2, 3, 4, 5):
             outcome = "🎳 Попал — несколько кеглей сбито."
         else:
             outcome = "🎳 Промах."
@@ -297,9 +297,9 @@ def _result_text(
     elif game_type == "darts":
         if value == 6:
             outcome = "🎯 Прямо в центр!"
-        elif value in (3, 5):
+        elif value in (3, 4, 5):
             outcome = "🎯 Красный сектор."
-        elif value in (2, 4):
+        elif value == 2:
             outcome = "🎯 Белый сектор."
         else:
             outcome = "🎯 Отскок дротика!"
