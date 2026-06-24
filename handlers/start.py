@@ -117,6 +117,18 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         tg_pending = tg_on and bool(tg_offers)
 
         if sg_pending or bh_pending or tg_pending:
+            # Store sponsor count shown — used for min-sponsors check and per-sponsor reward
+            if user.referral_reward_pending:
+                _total = (
+                    len(sg_sponsors if sg_pending else [])
+                    + len(tg_offers if tg_pending else [])
+                    + len(bh_result["tasks"] if bh_pending else [])
+                )
+                if wall_limit > 0:
+                    _total = min(_total, wall_limit)
+                user.pending_sponsor_count = _total
+                await session.commit()
+
             # Log wall show per service
             shown_services = (
                 (["subgram"] if sg_pending else [])

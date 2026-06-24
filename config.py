@@ -25,6 +25,7 @@ class Config:
     BONUS_MIN: float = float(os.getenv("BONUS_MIN", "0.5"))
     BONUS_MAX: float = float(os.getenv("BONUS_MAX", "1.0"))
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8080"))
+    TGRASS_WEBHOOK_SECRET: str = os.getenv("TGRASS_WEBHOOK_SECRET", "")
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "")
     FSM_DB_PATH: str = os.getenv("FSM_DB_PATH", "")
 

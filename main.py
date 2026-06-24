@@ -9,11 +9,14 @@ from aiogram_sqlite_storage.sqlitestore import SQLStorage
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import ErrorEvent
 
+from aiohttp import web
+
 from config import config
 from database import init_db
 from handlers import routers
 from middlewares import SessionMiddleware, RegisteredUserMiddleware
 from middlewares.register import CombinedWallMiddleware
+from webhooks.tgrass_webhook import create_webhook_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -56,6 +59,13 @@ async def main() -> None:
     asyncio.create_task(retention_loop(bot))
     asyncio.create_task(payments_stats_loop(bot))
     asyncio.create_task(_lottery_time_check_loop(bot))
+
+    webhook_app = create_webhook_app(bot)
+    runner = web.AppRunner(webhook_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", config.WEBHOOK_PORT)
+    await site.start()
+    logger.info("Webhook server started on port %s", config.WEBHOOK_PORT)
 
     logger.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])

@@ -24,6 +24,7 @@ from keyboards.admin import (
     admin_users_kb, admin_database_kb,
     admin_casino_kb, admin_wheel_videos_kb, admin_cases_videos_kb, admin_case_prizes_kb,
     casino_back_kb, prize_to_key, _CASE_PRIZES_LIST, _TIER_ICONS,
+    reward_mode_kb,
 )
 from keyboards.lottery import admin_lottery_kb, admin_lottery_pick_kb, admin_lottery_end_type_kb, admin_lottery_confirm_kb, admin_lottery_skip_kb
 from config import config
@@ -64,6 +65,8 @@ class AdminSettingsStates(StatesGroup):
     bonus_max = State()
     payments_channel_id = State()
     payments_channel_url = State()
+    reward_per_sponsor = State()
+    min_sponsors = State()
 
 
 class AdminBroadcastStates(StatesGroup):
@@ -847,10 +850,18 @@ async def cb_settings(callback: CallbackQuery, session: AsyncSession) -> None:
     bmax = (await session.get(BotSettings, "bonus_max"))
     pch = (await session.get(BotSettings, "payments_channel_id"))
     pch_url = (await session.get(BotSettings, "payments_channel_url"))
+    r_mode = (await session.get(BotSettings, "referral_reward_mode"))
+    r_per_sp = (await session.get(BotSettings, "referral_reward_per_sponsor"))
+    r_min_sp = (await session.get(BotSettings, "referral_min_sponsors"))
+
+    mode_label = "фиксированная" if not r_mode or r_mode.value == "fixed" else "за спонсоров"
 
     await callback.message.edit_text(
         f"⚙️ <b>Настройки</b>\n\n"
-        f"⭐ Награда за реферала: <b>{rr.value if rr else '?'}</b>\n"
+        f"⭐ Награда за реферала (фикс.): <b>{rr.value if rr else '?'}</b>\n"
+        f"🔄 Режим награды: <b>{mode_label}</b>\n"
+        f"💰 Цена 1 спонсора: <b>{r_per_sp.value if r_per_sp and r_per_sp.value else '0'}</b>\n"
+        f"🔢 Мин. спонсоров: <b>{r_min_sp.value if r_min_sp and r_min_sp.value else '3'}</b>\n"
         f"⏱ Кулдаун бонуса: <b>{bc.value if bc else '?'} ч</b>\n"
         f"🎁 Бонус мин: <b>{bmin.value if bmin else '?'}</b>\n"
         f"🎁 Бонус макс: <b>{bmax.value if bmax else '?'}</b>\n"
@@ -976,6 +987,63 @@ async def msg_set_payments_channel_url(message: Message, state: FSMContext, sess
         parse_mode="HTML",
         reply_markup=admin_main_kb(),
     )
+
+
+@router.callback_query(lambda c: c.data == "settings:reward_mode")
+async def cb_set_reward_mode(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text(
+        "🔄 <b>Режим начисления награды за реферала</b>\n\n"
+        "📌 <b>Фиксированная</b> — всегда выплачивается одна сумма.\n"
+        "📊 <b>За спонсоров</b> — цена × кол-во спонсоров реферала.",
+        parse_mode="HTML",
+        reply_markup=reward_mode_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("reward_mode:"))
+async def cb_save_reward_mode(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not is_admin(callback.from_user.id):
+        return
+    mode = callback.data.split(":")[1]
+    if mode not in ("fixed", "per_sponsor"):
+        return await callback.answer("Неверный режим.", show_alert=True)
+    await set_setting(session, "referral_reward_mode", mode)
+    label = "фиксированная" if mode == "fixed" else "за спонсоров"
+    await callback.answer(f"✅ Режим: {label}", show_alert=True)
+    await callback.message.edit_text(
+        f"✅ Режим награды установлен: <b>{label}</b>",
+        parse_mode="HTML",
+        reply_markup=reward_mode_kb(),
+    )
+
+
+@router.callback_query(lambda c: c.data == "settings:reward_per_sponsor")
+async def cb_set_reward_per_sponsor(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return
+    await _ask_setting(callback, state, AdminSettingsStates.reward_per_sponsor,
+                       "💰 Введи награду за 1 спонсора (число, напр. 5):")
+
+
+@router.message(AdminSettingsStates.reward_per_sponsor)
+async def msg_set_reward_per_sponsor(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    await _save_setting(message, state, session, "referral_reward_per_sponsor")
+
+
+@router.callback_query(lambda c: c.data == "settings:min_sponsors")
+async def cb_set_min_sponsors(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        return
+    await _ask_setting(callback, state, AdminSettingsStates.min_sponsors,
+                       "🔢 Введи минимальное кол-во спонсоров для выплаты (целое, по умолчанию 3):")
+
+
+@router.message(AdminSettingsStates.min_sponsors)
+async def msg_set_min_sponsors(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    await _save_setting(message, state, session, "referral_min_sponsors")
 
 
 # ─── Broadcast ───────────────────────────────────────────────────────────────

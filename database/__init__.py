@@ -28,6 +28,9 @@ async def init_db() -> None:
             "ALTER TABLE users ADD COLUMN darts_bullseye_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN slots_777_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE withdrawals ADD COLUMN gift_emoji_id TEXT",
+            "ALTER TABLE users ADD COLUMN pending_sponsor_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN referral_reward_given REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE users ADD COLUMN reward_clawed_back INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 await conn.execute(text(stmt))

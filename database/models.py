@@ -27,6 +27,9 @@ class User(Base):
     premium_referrals_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     darts_bullseye_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     slots_777_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pending_sponsor_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    referral_reward_given: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    reward_clawed_back: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class BotSettings(Base):

@@ -9,6 +9,40 @@ async def _get_fixed_reward(session: AsyncSession) -> float:
     return float(rr_row.value) if rr_row and rr_row.value else 0.0
 
 
+async def _get_mode(session: AsyncSession) -> str:
+    row = await session.get(BotSettings, "referral_reward_mode")
+    return row.value if row and row.value in ("fixed", "per_sponsor") else "fixed"
+
+
+async def _get_per_sponsor(session: AsyncSession) -> float:
+    row = await session.get(BotSettings, "referral_reward_per_sponsor")
+    if row and row.value:
+        try:
+            return float(row.value)
+        except ValueError:
+            pass
+    return 0.0
+
+
+async def _get_min_sponsors(session: AsyncSession) -> int:
+    row = await session.get(BotSettings, "referral_min_sponsors")
+    if row and row.value:
+        try:
+            return int(row.value)
+        except ValueError:
+            pass
+    return 3
+
+
+async def _calc_reward(session: AsyncSession, user: User) -> float:
+    mode = await _get_mode(session)
+    if mode == "per_sponsor":
+        per = await _get_per_sponsor(session)
+        count = user.pending_sponsor_count or 0
+        return round(per * count, 2) if count > 0 else 0.0
+    return await _get_fixed_reward(session)
+
+
 async def notify_referrer_joined(
     new_user: User, session: AsyncSession, bot: Bot
 ) -> None:
@@ -19,16 +53,29 @@ async def notify_referrer_joined(
     if not referrer:
         return
 
-    reward = await _get_fixed_reward(session)
     name = f"@{new_user.username}" if new_user.username else new_user.first_name
+    mode = await _get_mode(session)
+
+    if mode == "per_sponsor":
+        per = await _get_per_sponsor(session)
+        min_s = await _get_min_sponsors(session)
+        reward_text = (
+            f'<b>{per} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji> за каждого спонсора</b>'
+            f' (мин. {min_s} спонсоров)'
+        )
+    else:
+        reward = await _get_fixed_reward(session)
+        reward_text = (
+            f'<b>{reward} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji></b>'
+            f' как только он подпишется на спонсоров'
+        )
 
     try:
         await bot.send_message(
             new_user.referrer_id,
             f'<tg-emoji emoji-id="5258203794772085854">⚡️</tg-emoji> '
             f'Пользователь {name} присоединился по твоей ссылке!\n\n'
-            f'Ты получишь <b>{reward} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji></b> '
-            f'как только он подпишется на спонсоров',
+            f'Ты получишь {reward_text}',
             parse_mode="HTML",
         )
     except Exception:
@@ -74,11 +121,33 @@ async def grant_referral_reward_if_pending(
         await session.commit()
         return
 
-    reward = await _get_fixed_reward(session)
+    name = f"@{user.username}" if user.username else user.first_name
+    count = user.pending_sponsor_count or 0
+    min_s = await _get_min_sponsors(session)
+
+    # Check minimum sponsor threshold
+    if count < min_s:
+        user.referral_reward_pending = False
+        await session.commit()
+        try:
+            await bot.send_message(
+                user.referrer_id,
+                f'<tg-emoji emoji-id="5258203794772085854">⚡️</tg-emoji> '
+                f'Пользователь {name} подписался на <b>{count}</b> спонсора(ов), '
+                f'но для получения награды нужно минимум <b>{min_s}</b>.\n'
+                f'Награда не начислена.',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        return
+
+    reward = await _calc_reward(session, user)
 
     referrer.referrals_count += 1
     referrer.stars_balance += reward
     user.referral_reward_pending = False
+    user.referral_reward_given = reward
     if is_premium:
         referrer.premium_referrals_count = (referrer.premium_referrals_count or 0) + 1
     await session.commit()
@@ -86,12 +155,17 @@ async def grant_referral_reward_if_pending(
     from services.battlepass import after_referral_granted
     await after_referral_granted(referrer, session, bot, is_premium=is_premium)
 
-    name = f"@{user.username}" if user.username else user.first_name
+    mode = await _get_mode(session)
+    if mode == "per_sponsor" and count > 0:
+        detail = f" ({count} спонс. × {await _get_per_sponsor(session)})"
+    else:
+        detail = ""
+
     try:
         await bot.send_message(
             user.referrer_id,
-            f'+{reward} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji> '
-            f'Начисление за приглашённого пользователя {name}',
+            f'+{reward} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji>'
+            f'{detail} Начисление за приглашённого пользователя {name}',
             parse_mode="HTML",
         )
     except Exception:
