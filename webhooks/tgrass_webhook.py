@@ -75,4 +75,5 @@ def create_webhook_app(bot) -> web.Application:
     app = web.Application()
     app["bot"] = bot
     app.router.add_post("/webhook/tgrass", tgrass_unsubscribe)
+    app.router.add_post("/unsubscribe", tgrass_unsubscribe)
     return app
