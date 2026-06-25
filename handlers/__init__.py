@@ -1,7 +1,8 @@
-from handlers import start, earn, bonus, profile, promo, withdraw, tasks, top, games, admin, botohub, duel, search, lottery, wheel, cases, battlepass
+from handlers import captcha, start, earn, bonus, profile, promo, withdraw, tasks, top, games, admin, botohub, duel, search, lottery, wheel, cases, battlepass
 
 routers = [
-    botohub.router,  # must be first so botohub:check is matched before other handlers
+    captcha.router,  # must be first: catches all input while captcha is active (FSM state)
+    botohub.router,
     start.router,
     earn.router,
     bonus.router,

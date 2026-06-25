@@ -34,7 +34,7 @@ async def get_subgram_sponsors(user_id: int, max_sponsors: int = 5, user=None) -
     if user:
         payload["first_name"] = getattr(user, "first_name", "") or ""
         payload["username"] = getattr(user, "username", "") or ""
-        payload["language_code"] = getattr(user, "language_code", "ru") or "ru"
+        payload["language_code"] = "ru"
         payload["is_premium"] = bool(getattr(user, "is_premium", False))
 
     try:

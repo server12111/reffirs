@@ -154,11 +154,11 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
             return
 
         # Sponsors checked but nothing pending for this user.
-        # Cancel the referral reward ONLY if all integrations are disabled —
-        # meaning the user will never be shown a wall and can never earn it.
-        # If integrations are on but returned empty (user already passed, API glitch,
-        # or repeat /start), keep reward pending — middleware will grant it later.
-        if not bh_on and not sg_on and not tg_on:
+        if is_new and user.referral_reward_pending and not (sg_pending or bh_pending or tg_pending):
+            # New user who got no sponsors (region filter, language, etc.) — cancel immediately.
+            await cancel_referral_no_sponsors(user, session, message.bot)
+        elif not bh_on and not sg_on and not tg_on:
+            # All integrations disabled — cancel for returning users too.
             await cancel_referral_no_sponsors(user, session, message.bot)
     ad_sent = await show_botohub_views(message.from_user.id, hi=True)
     if ad_sent:

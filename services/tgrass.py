@@ -28,7 +28,7 @@ async def get_tgrass_offers(user_id: int, user=None) -> list[dict]:
     payload: dict = {
         "tg_user_id": user_id,
         "is_premium": bool(getattr(user, "is_premium", False) or False),
-        "lang": getattr(user, "language_code", "ru") or "ru",
+        "lang": "ru",
     }
     username = getattr(user, "username", None)
     if username:

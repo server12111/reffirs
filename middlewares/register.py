@@ -248,8 +248,25 @@ class RegisteredUserMiddleware(BaseMiddleware):
 
         data["db_user"] = db_user
 
-        # Update last_seen_at at most once per hour to reduce DB writes
+        # Captcha block check
         now = datetime.utcnow()
+        if db_user.captcha_blocked_until and now < db_user.captcha_blocked_until:
+            remaining_sec = int((db_user.captcha_blocked_until - now).total_seconds())
+            remaining_min = max(1, (remaining_sec + 59) // 60)
+            if isinstance(event, Message):
+                await event.answer(
+                    f"🔒 Слишком много неверных попыток.\n"
+                    f"Попробуй снова через <b>{remaining_min} мин.</b>",
+                    parse_mode="HTML",
+                )
+            elif isinstance(event, CallbackQuery):
+                await event.answer(
+                    f"🔒 Заблокировано. Попробуй через {remaining_min} мин.",
+                    show_alert=True,
+                )
+            return
+
+        # Update last_seen_at at most once per hour to reduce DB writes
         if db_user.last_seen_at is None or (now - db_user.last_seen_at).total_seconds() > 3600:
             db_user.last_seen_at = now
             await session.commit()

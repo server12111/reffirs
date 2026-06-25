@@ -31,6 +31,8 @@ async def init_db() -> None:
             "ALTER TABLE users ADD COLUMN pending_sponsor_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN referral_reward_given REAL NOT NULL DEFAULT 0.0",
             "ALTER TABLE users ADD COLUMN reward_clawed_back INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN captcha_passed INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN captcha_blocked_until DATETIME",
         ]:
             try:
                 await conn.execute(text(stmt))

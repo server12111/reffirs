@@ -30,6 +30,8 @@ class User(Base):
     pending_sponsor_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     referral_reward_given: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     reward_clawed_back: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    captcha_passed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    captcha_blocked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class BotSettings(Base):

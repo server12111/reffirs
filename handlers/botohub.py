@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from database.models import User, BotSettings
 from handlers.button_helper import answer_with_content
 from keyboards.botohub import build_botohub_wall_kb, build_combined_wall_kb
 from keyboards.main import main_menu_kb
+from handlers.captcha import show_captcha
 from services.referral import grant_referral_reward_if_pending
 from services.subgram import get_subgram_sponsors
 from services.tgrass import get_tgrass_offers
@@ -23,16 +25,27 @@ router = Router()
 
 
 @router.callback_query(lambda c: c.data == "botohub:check")
-async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> None:
+async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    from datetime import datetime
+    db_user = await session.get(User, callback.from_user.id)
+    if db_user and db_user.captcha_blocked_until and datetime.utcnow() < db_user.captcha_blocked_until:
+        remaining = max(1, int((db_user.captcha_blocked_until - datetime.utcnow()).total_seconds() / 60) + 1)
+        await callback.answer(f"🔒 Заблокировано. Попробуй через {remaining} мин.", show_alert=True)
+        return
+
     result = await check_botohub(callback.from_user.id)
 
     if result["completed"] or result["skip"]:
-        db_user = await session.get(User, callback.from_user.id)
         if db_user and db_user.referral_reward_pending:
             await grant_referral_reward_if_pending(
                 db_user, session, callback.bot,
                 is_premium=callback.from_user.is_premium or False,
             )
+
+        if db_user and not db_user.captcha_passed:
+            await callback.answer("✅ Подписка подтверждена!")
+            await show_captcha(callback, session, state)
+            return
 
         ad_sent = await show_botohub_views(callback.from_user.id)
         if ad_sent:
@@ -69,12 +82,20 @@ async def cb_botohub_check(callback: CallbackQuery, session: AsyncSession) -> No
 
 
 @router.callback_query(lambda c: c.data == "wall:check")
-async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession) -> None:
+async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     """
     Unified check for the combined wall (TGrass + Subgram + BotoHub).
     PiarFlow and Flyer removed.
     """
+    from datetime import datetime as _dt
     user_id = callback.from_user.id
+
+    # Captcha block check — before any API calls
+    db_user = await session.get(User, user_id)
+    if db_user and db_user.captcha_blocked_until and _dt.utcnow() < db_user.captcha_blocked_until:
+        remaining = max(1, int((db_user.captcha_blocked_until - _dt.utcnow()).total_seconds() / 60) + 1)
+        await callback.answer(f"🔒 Заблокировано. Попробуй через {remaining} мин.", show_alert=True)
+        return
 
     from config import config as _cfg
 
@@ -136,12 +157,20 @@ async def cb_combined_wall_check(callback: CallbackQuery, session: AsyncSession)
     )
     await log_wall_pass(session, *passed_services)
 
-    db_user = await session.get(User, user_id)
     if db_user and db_user.referral_reward_pending:
         await grant_referral_reward_if_pending(
             db_user, session, callback.bot,
             is_premium=callback.from_user.is_premium or False,
         )
+
+    # Reload captcha_passed in case grant_referral_reward_if_pending expired the object
+    if db_user:
+        await session.refresh(db_user)
+    if not db_user or not db_user.captcha_passed:
+        await callback.answer("✅ Подписка подтверждена!")
+        await show_captcha(callback, session, state)
+        logger.info("CombinedWall: user %s passed wall → captcha shown", user_id)
+        return
 
     ad_sent = await show_botohub_views(user_id)
     if ad_sent:
