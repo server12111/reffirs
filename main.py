@@ -30,11 +30,8 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     import os
-    _fsm_path = config.FSM_DB_PATH or (
-        os.path.join(os.path.dirname(os.path.abspath(config.DATABASE_PATH)), "fsm_storage.db")
-        if config.DATABASE_PATH
-        else "fsm_storage.db"
-    )
+    from database.engine import _db_path
+    _fsm_path = config.FSM_DB_PATH or os.path.join(os.path.dirname(_db_path), "fsm_storage.db")
     dp = Dispatcher(storage=SQLStorage(_fsm_path))
 
     # Middlewares — order matters: session → combined wall → user check

@@ -16,18 +16,8 @@ def _resolve_db_path() -> str:
     for candidate in ("/data/database.db", "/var/data/database.db"):
         if os.path.isdir(os.path.dirname(candidate)):
             return candidate
-    # VPS default: store OUTSIDE the git checkout (SrvNkreferal/database.db)
-    # Lives one level above the test/ directory — survives git pull and redeployment
-    preferred = pathlib.Path(__file__).resolve().parent.parent.parent / "database.db"
-    # One-time migration: if old path (test/database.db) exists and new doesn't, copy it
-    old_path = pathlib.Path(__file__).resolve().parent.parent / "database.db"
-    if not preferred.exists() and old_path.exists():
-        try:
-            preferred.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(old_path), str(preferred))
-        except Exception:
-            pass
-    return str(preferred)
+    # Default: project root (directory where main.py lives, one level above database/)
+    return str(pathlib.Path(__file__).resolve().parent.parent / "database.db")
 
 
 _db_path = _resolve_db_path()
