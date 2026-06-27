@@ -65,7 +65,7 @@ class AdminSettingsStates(StatesGroup):
     bonus_max = State()
     payments_channel_id = State()
     payments_channel_url = State()
-    reward_per_sponsor = State()
+    reward_tiers = State()
     min_sponsors = State()
 
 
@@ -844,6 +844,7 @@ async def cb_settings(callback: CallbackQuery, session: AsyncSession) -> None:
     if not is_admin(callback.from_user.id):
         return await callback.answer("Нет доступа.", show_alert=True)
 
+    import json as _json
     rr = (await session.get(BotSettings, "referral_reward"))
     bc = (await session.get(BotSettings, "bonus_cooldown_hours"))
     bmin = (await session.get(BotSettings, "bonus_min"))
@@ -851,16 +852,24 @@ async def cb_settings(callback: CallbackQuery, session: AsyncSession) -> None:
     pch = (await session.get(BotSettings, "payments_channel_id"))
     pch_url = (await session.get(BotSettings, "payments_channel_url"))
     r_mode = (await session.get(BotSettings, "referral_reward_mode"))
-    r_per_sp = (await session.get(BotSettings, "referral_reward_per_sponsor"))
+    r_tiers = (await session.get(BotSettings, "referral_reward_tiers"))
     r_min_sp = (await session.get(BotSettings, "referral_min_sponsors"))
 
     mode_label = "фиксированная" if not r_mode or r_mode.value == "fixed" else "за спонсоров"
+
+    tiers_display = "не заданы"
+    if r_tiers and r_tiers.value:
+        try:
+            d = _json.loads(r_tiers.value)
+            tiers_display = ", ".join(f"{k}→{v}⭐" for k, v in sorted(d.items(), key=lambda x: int(x[0])))
+        except Exception:
+            tiers_display = r_tiers.value
 
     await callback.message.edit_text(
         f"⚙️ <b>Настройки</b>\n\n"
         f"⭐ Награда за реферала (фикс.): <b>{rr.value if rr else '?'}</b>\n"
         f"🔄 Режим награды: <b>{mode_label}</b>\n"
-        f"💰 Цена 1 спонсора: <b>{r_per_sp.value if r_per_sp and r_per_sp.value else '0'}</b>\n"
+        f"📊 Тиры наград: <b>{tiers_display}</b>\n"
         f"🔢 Мин. спонсоров: <b>{r_min_sp.value if r_min_sp and r_min_sp.value else '3'}</b>\n"
         f"⏱ Кулдаун бонуса: <b>{bc.value if bc else '?'} ч</b>\n"
         f"🎁 Бонус мин: <b>{bmin.value if bmin else '?'}</b>\n"
@@ -1020,17 +1029,50 @@ async def cb_save_reward_mode(callback: CallbackQuery, session: AsyncSession) ->
     )
 
 
-@router.callback_query(lambda c: c.data == "settings:reward_per_sponsor")
-async def cb_set_reward_per_sponsor(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(lambda c: c.data == "settings:reward_tiers")
+async def cb_set_reward_tiers(callback: CallbackQuery, state: FSMContext) -> None:
     if not is_admin(callback.from_user.id):
         return
-    await _ask_setting(callback, state, AdminSettingsStates.reward_per_sponsor,
-                       "💰 Введи награду за 1 спонсора (число, напр. 5):")
+    await state.set_state(AdminSettingsStates.reward_tiers)
+    await callback.message.edit_text(
+        "📊 <b>Тиры наград за спонсоров</b>\n\n"
+        "Введи в формате: <code>кол-во_спонсоров=звёзды</code>, через запятую.\n"
+        "Макс. 5⭐ на тир.\n\n"
+        "Пример: <code>1=1,2=2,3=5</code>\n"
+        "(1 спонсор → 1⭐, 2 → 2⭐, 3+ → 5⭐)",
+        parse_mode="HTML",
+    )
+    await callback.answer()
 
 
-@router.message(AdminSettingsStates.reward_per_sponsor)
-async def msg_set_reward_per_sponsor(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    await _save_setting(message, state, session, "referral_reward_per_sponsor")
+@router.message(AdminSettingsStates.reward_tiers)
+async def msg_set_reward_tiers(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    import json as _json
+    await state.clear()
+    raw = (message.text or "").strip()
+    try:
+        pairs: dict[int, float] = {}
+        for part in raw.split(","):
+            left, right = part.strip().split("=")
+            k, v = int(left.strip()), float(right.strip())
+            if k <= 0 or v <= 0 or v > 5:
+                raise ValueError(f"invalid pair {k}={v}")
+            pairs[k] = v
+        if not pairs:
+            raise ValueError("empty")
+        await set_setting(session, "referral_reward_tiers", _json.dumps(pairs))
+        preview = ", ".join(f"{k}→{v}⭐" for k, v in sorted(pairs.items()))
+        await message.answer(
+            f"✅ Тиры установлены: <b>{preview}</b>",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb(),
+        )
+    except Exception:
+        await message.answer(
+            "❌ Неверный формат.\nПример: <code>1=1,2=2,3=5</code>",
+            parse_mode="HTML",
+            reply_markup=admin_main_kb(),
+        )
 
 
 @router.callback_query(lambda c: c.data == "settings:min_sponsors")

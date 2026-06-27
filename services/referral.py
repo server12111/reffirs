@@ -14,14 +14,16 @@ async def _get_mode(session: AsyncSession) -> str:
     return row.value if row and row.value in ("fixed", "per_sponsor") else "fixed"
 
 
-async def _get_per_sponsor(session: AsyncSession) -> float:
-    row = await session.get(BotSettings, "referral_reward_per_sponsor")
-    if row and row.value:
-        try:
-            return float(row.value)
-        except ValueError:
-            pass
-    return 0.0
+async def _get_reward_tiers(session: AsyncSession) -> dict[int, float]:
+    import json
+    row = await session.get(BotSettings, "referral_reward_tiers")
+    if not row or not row.value:
+        return {}
+    try:
+        data = json.loads(row.value)
+        return {int(k): min(5.0, float(v)) for k, v in data.items()}
+    except Exception:
+        return {}
 
 
 async def _get_min_sponsors(session: AsyncSession) -> int:
@@ -37,9 +39,15 @@ async def _get_min_sponsors(session: AsyncSession) -> int:
 async def _calc_reward(session: AsyncSession, user: User) -> float:
     mode = await _get_mode(session)
     if mode == "per_sponsor":
-        per = await _get_per_sponsor(session)
         count = user.pending_sponsor_count or 0
-        return round(per * count, 2) if count > 0 else 0.0
+        tiers = await _get_reward_tiers(session)
+        if not tiers or count == 0:
+            return 0.0
+        reward = 0.0
+        for k, v in tiers.items():
+            if k <= count:
+                reward = max(reward, v)
+        return min(5.0, reward)
     return await _get_fixed_reward(session)
 
 
@@ -57,12 +65,16 @@ async def notify_referrer_joined(
     mode = await _get_mode(session)
 
     if mode == "per_sponsor":
-        per = await _get_per_sponsor(session)
+        tiers = await _get_reward_tiers(session)
         min_s = await _get_min_sponsors(session)
-        reward_text = (
-            f'<b>{per} <tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji> за каждого спонсора</b>'
-            f' (мин. {min_s} спонсоров)'
-        )
+        if tiers:
+            tiers_text = ", ".join(
+                f'{k}→{v}<tg-emoji emoji-id="5438496463044752972">⭐️</tg-emoji>'
+                for k, v in sorted(tiers.items())
+            )
+            reward_text = f'<b>тиры: {tiers_text}</b> (мин. {min_s} спонс.)'
+        else:
+            reward_text = f'(тиры не настроены, мин. {min_s} спонс.)'
     else:
         reward = await _get_fixed_reward(session)
         reward_text = (
@@ -156,10 +168,7 @@ async def grant_referral_reward_if_pending(
     await after_referral_granted(referrer, session, bot, is_premium=is_premium)
 
     mode = await _get_mode(session)
-    if mode == "per_sponsor" and count > 0:
-        detail = f" ({count} спонс. × {await _get_per_sponsor(session)})"
-    else:
-        detail = ""
+    detail = f" (тир {count} сп.)" if mode == "per_sponsor" and count > 0 else ""
 
     try:
         await bot.send_message(
