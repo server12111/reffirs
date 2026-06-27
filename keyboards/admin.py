@@ -115,7 +115,7 @@ def admin_settings_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⭐ Награда за реферала (фикс.)", callback_data="settings:referral_reward"))
     builder.row(InlineKeyboardButton(text="🔄 Режим награды", callback_data="settings:reward_mode"))
-    builder.row(InlineKeyboardButton(text="📊 Тиры наград", callback_data="settings:reward_tiers"))
+    builder.row(InlineKeyboardButton(text="💰 Цена 1 спонсора (макс 5⭐)", callback_data="settings:reward_per_sponsor"))
     builder.row(InlineKeyboardButton(text="🔢 Мин. спонсоров для выплаты", callback_data="settings:min_sponsors"))
     builder.row(InlineKeyboardButton(text="⏱ Кулдаун бонуса (часы)", callback_data="settings:bonus_cooldown"))
     builder.row(InlineKeyboardButton(text="🎁 Мин. бонус", callback_data="settings:bonus_min"))
