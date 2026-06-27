@@ -17,10 +17,18 @@ router = Router()
 async def cb_earn(callback: CallbackQuery, session: AsyncSession, db_user: User) -> None:
     ref_link = f"https://t.me/{config.BOT_USERNAME}?start=ref_{db_user.user_id}"
 
-    from database.models import BotSettings
-    rr_row = await session.get(BotSettings, "referral_reward")
-    reward = float(rr_row.value) if rr_row and rr_row.value else 0.0
-    reward_line = f"💰 <b>Награда за реферала: {reward} ⭐</b>"
+    from services.referral import _get_mode, _get_fixed_reward, _get_per_sponsor, _get_min_sponsors
+    mode = await _get_mode(session)
+    if mode == "per_sponsor":
+        per = await _get_per_sponsor(session)
+        min_s = await _get_min_sponsors(session)
+        reward_line = (
+            f"💰 <b>Награда за реферала: {per} ⭐ × кол-во спонсоров</b>\n"
+            f"   (макс. 5 ⭐, мин. {min_s} спонс.)"
+        )
+    else:
+        reward = await _get_fixed_reward(session)
+        reward_line = f"💰 <b>Награда за реферала: {reward} ⭐</b>"
 
     tasks_done = (await session.execute(
         select(func.count(TaskCompletion.task_id)).where(TaskCompletion.user_id == db_user.user_id)
